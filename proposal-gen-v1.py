@@ -6,17 +6,32 @@ import logging
 from typing import List, Dict, Optional
 from openai import OpenAI
 import os
+import datetime
 from fastapi import FastAPI, HTTPException, responses
 from pydantic import BaseModel
 import uvicorn
 
 # Configure logging for production readiness.
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    filename="app.log",
-)
-logger = logging.getLogger("co_scientist")
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+#     filename="app.log",
+# )
+# logger = logging.getLogger("co_scientist") # global logger
+
+def setup_logger(log_filename):
+    logger = logging.getLogger(log_filename)  # Create a logger with the filename
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+    # Remove existing handlers to avoid duplicate logs
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+
+    file_handler = logging.FileHandler(log_filename)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    return logger
 
 def call_llm(prompt: str) -> str:
     """
@@ -563,10 +578,16 @@ def set_research_goal(goal: ResearchGoalRequest):
     Returns:
         dict: A confirmation message.
     """
-    global current_research_goal, global_context
+    global current_research_goal, global_context, logger
     current_research_goal = ResearchGoal(goal.description, goal.constraints)
     # Reset context for new research goal
     global_context = ContextMemory()
+
+    # Create a new logger for this submission
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_filename = f"log_{timestamp}.txt"
+    logger = setup_logger(log_filename)
+
     logger.info("Research goal set: %s", goal.description)
     return {"message": "Research goal successfully set."}
 
