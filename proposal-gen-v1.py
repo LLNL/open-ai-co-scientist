@@ -4,7 +4,9 @@ import math
 import random
 import logging
 from typing import List, Dict, Optional
-from fastapi import FastAPI, HTTPException
+from openai import OpenAI
+import os
+from fastapi import FastAPI, HTTPException, responses
 from pydantic import BaseModel
 import uvicorn
 
@@ -12,8 +14,43 @@ import uvicorn
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    filename="app.log",
 )
 logger = logging.getLogger("co_scientist")
+
+def call_llm(prompt: str) -> str:
+    """
+    Calls an LLM via the OpenRouter API and returns the response.
+
+    Args:
+        prompt (str): The input prompt for the LLM.
+
+    Returns:
+        str: The LLM's response.
+    """
+    client = OpenAI(
+      base_url="https://openrouter.ai/api/v1",
+      api_key=os.getenv("OPENROUTER_API_KEY")
+    )
+
+    try:
+        completion = client.chat.completions.create(
+            model="google/gemini-2.0-flash-thinking-exp:free",  # Or any other suitable model
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+        )
+    except Exception as e:
+        # If the library raises an exception (e.g., for invalid key, rate limit, etc.)
+        logger.error(f"API call failed with exception: {e}")
+        return f"API call failed with exception: {e}" # Return the error message
+    else:
+        # If no exception, you can safely access attributes
+        if completion.choices and len(completion.choices) > 0:
+            return completion.choices[0].message.content
+        else:
+            logger.error("No choices in the response: %s", completion.dict())
+            return f"No choices in the response: {completion.dict()}"
 
 ###############################################################################
 # Data Models and Pydantic Schemas
@@ -106,34 +143,54 @@ def generate_unique_id(prefix="H") -> str:
     """
     return f"{prefix}{random.randint(1000, 9999)}"
 
-def call_llm_for_generation(prompt: str) -> List[Dict]:
+def call_llm_for_generation(prompt: str, num_hypotheses: int = 3) -> List[Dict]:
     """
-    Simulates a call to a Large Language Model (LLM) for generating hypotheses.
-    In a production environment, this would be replaced with an actual API call to an LLM.
+    Calls a Large Language Model (LLM) for generating hypotheses.
 
     Args:
         prompt (str): The input prompt for the LLM.
+        num_hypotheses (int, optional): The number of hypotheses to generate. Defaults to 3.
 
     Returns:
         List[Dict]: A list of dictionaries, each representing a generated hypothesis.
                     Each dictionary contains "title" and "text" keys.
+    TODO: design the prompt so it will generate tile and text in the right format as expected
     """
-    logger.info("LLM generation called with prompt: %s", prompt)
-    return [
-        {
-            "title": "Potential link between epigenetic factor X and disease Y",
-            "text": "We hypothesize that factor X modulates gene expression leading to disease Y."
-        },
-        {
-            "title": "Alternative synergy with drug A for condition B",
-            "text": "We propose that drug A, originally approved for condition M, might be repurposed for condition B."
-        }
-    ]
+    logger.info("LLM generation called with prompt: %s, num_hypotheses: %d", prompt, num_hypotheses)
+    hypotheses = []
+    for _ in range(num_hypotheses):
+        response = call_llm(prompt)
+        logger.info("LLM response: %s", response)
+        # Basic parsing, assuming the LLM returns a string with title and text.
+        #  A more robust parser might be needed depending on the LLM's output format.
+        if "API call failed" in response:
+            # If the call failed, log it and skip to next iteration
+            logger.error(f"LLM call failed: {response}")
+            continue
+
+        try:
+            # Attempt to extract title and text, handling potential formatting variations
+            title = response.split("Title:")[1].split("Text:")[0].strip()
+            text = response.split("Text:")[1].strip()
+            logger.info("Parsed title: %s, text: %s", title, text)
+        except IndexError:
+            logger.warning("Could not parse response: %s", response)
+            # Try a simpler split, assuming title and text are separated by a newline
+            parts = response.split("\n", 1)  # Split into at most two parts
+            if len(parts) == 2:
+                title, text = parts[0].strip(), parts[1].strip()
+                logger.info("Parsed title: %s, text: %s", title, text)
+            else:
+                title = "Untitled"
+                text = response
+                logger.warning("Using entire response as text: %s", text)
+        hypotheses.append({"title": title, "text": text})
+
+    return hypotheses
 
 def call_llm_for_reflection(hypothesis_text: str) -> Dict:
     """
-    Simulates a call to a Large Language Model (LLM) for reviewing a hypothesis.
-    In a production environment, this would be replaced with an actual API call to an LLM.
+    Calls a Large Language Model (LLM) for reviewing a hypothesis.
 
     Args:
         hypothesis_text (str): The text of the hypothesis to be reviewed.
@@ -142,16 +199,40 @@ def call_llm_for_reflection(hypothesis_text: str) -> Dict:
         Dict: A dictionary containing the review results, including novelty and feasibility
               assessments (HIGH, MEDIUM, or LOW), a comment, and a list of references.
     """
-    outcomes = ["HIGH", "MEDIUM", "LOW"]
-    novelty = random.choice(outcomes)
-    feasibility = random.choice(outcomes)
-    comment = f"Review: novelty={novelty}, feasibility={feasibility}"
-    logger.info("LLM reflection for hypothesis: %s", hypothesis_text)
+    prompt = (
+        f"Review the following hypothesis and provide a novelty assessment (HIGH, MEDIUM, or LOW), "
+        f"a feasibility assessment (HIGH, MEDIUM, or LOW), a comment, and a list of references (PMIDs):\n\n"
+        f"Hypothesis: {hypothesis_text}"
+    )
+    response = call_llm(prompt)
+    logger.info("LLM reflection for hypothesis: %s, response: %s", hypothesis_text, response)
+
+    # Initialize default values in case parsing fails
+    novelty_review = "MEDIUM"
+    feasibility_review = "MEDIUM"
+    comment = "Could not parse LLM response."
+    references = []
+
+    # Attempt to parse the LLM response.  The parsing logic may need
+    # to be adjusted based on the actual format of the LLM's output.
+    try:
+        if "API call failed" not in response: # Check for API failure
+            parts = response.split(",")  # Split into parts based on commas
+            novelty_review = [p.split(":")[1].strip() for p in parts if "novelty" in p.lower()][0]
+            feasibility_review = [p.split(":")[1].strip() for p in parts if "feasibility" in p.lower()][0]
+            comment = [p.split(":")[1].strip() for p in parts if "comment" in p.lower()][0]
+
+            # Extract references (assuming they are PMIDs)
+            references = [ref.strip() for ref in response.split() if ref.startswith("PMID:")]
+    except (IndexError, AttributeError) as e:
+        logger.warning(f"Error parsing LLM response: {e}")
+        logger.warning(f"Response: {response}")
+
     return {
-        "novelty_review": novelty,
-        "feasibility_review": feasibility,
+        "novelty_review": novelty_review,
+        "feasibility_review": feasibility_review,
         "comment": comment,
-        "references": ["PMID:123456", "PMID:789012"]
+        "references": references
     }
 
 def run_pairwise_debate(hypoA: Hypothesis, hypoB: Hypothesis) -> Hypothesis:
@@ -236,6 +317,7 @@ def similarity_score(textA: str, textB: str) -> float:
     Returns:
         float: A similarity score between 0 and 1 (inclusive). For now, it returns a random number.
     """
+    logger.info("Similarity score between %s and %s: %f (placeholder)", textA, textB, random.uniform(0,1))
     return random.uniform(0, 1)
 
 
@@ -260,11 +342,12 @@ class GenerationAgent:
             f"Constraints: {research_goal.constraints}\n"
             "Please propose 2 new hypotheses with rationale.\n"
         )
-        raw_output = call_llm_for_generation(prompt)
+        raw_output = call_llm_for_generation(prompt, num_hypotheses=2)
         new_hypos = []
         for idea in raw_output:
             hypo_id = generate_unique_id("G")
             h = Hypothesis(hypo_id, idea["title"], idea["text"])
+            logger.info("Generated hypothesis: %s", h.to_dict())
             new_hypos.append(h)
         return new_hypos
 
@@ -286,6 +369,7 @@ class ReflectionAgent:
             h.feasibility_review = result["feasibility_review"]
             h.review_comments.append(result["comment"])
             h.references.extend(result["references"])
+            logger.info("Reviewed hypothesis: %s, Novelty: %s, Feasibility: %s", h.hypothesis_id, h.novelty_review, h.feasibility_review)
 
 class RankingAgent:
     def run_tournament(self, hypotheses: List[Hypothesis], context: ContextMemory) -> None:
@@ -309,6 +393,7 @@ class RankingAgent:
                 winner = run_pairwise_debate(hA, hB)
                 loser = hB if winner == hA else hA
                 update_elo(winner, loser)
+                logger.info("Ran pairwise debate between %s and %s. Winner: %s", hA.hypothesis_id, hB.hypothesis_id, winner.hypothesis_id)
                 context.tournament_results.append({
                     "winner": winner.hypothesis_id,
                     "loser": loser.hypothesis_id,
@@ -335,6 +420,7 @@ class EvolutionAgent:
         new_hypotheses = []
         if len(top_candidates) >= 2:
             new_h = combine_hypotheses(top_candidates[0], top_candidates[1])
+            logger.info("Evolved hypothesis: %s", new_h.to_dict())
             new_hypotheses.append(new_h)
         return new_hypotheses
 
@@ -364,6 +450,7 @@ class ProximityAgent:
                     "other_id": hypotheses[j].hypothesis_id,
                     "similarity": sim
                 })
+        logger.info("Built proximity graph: %s", adjacency)
         return adjacency
 
 class MetaReviewAgent:
@@ -389,6 +476,8 @@ class MetaReviewAgent:
             if "feasibility=LOW" in c:
                 comment_summary.add("Some ideas may be infeasible.")
         best_hypotheses = sorted(context.get_active_hypotheses(), key=lambda h: h.elo_score, reverse=True)[:3]
+        logger.info("Top hypotheses: %s", [h.to_dict() for h in best_hypotheses])
+
         overview = {
             "meta_review_critique": list(comment_summary),
             "research_overview": {
@@ -400,6 +489,7 @@ class MetaReviewAgent:
             }
         }
         context.meta_review_feedback.append(overview)
+        logger.info("Meta-review and feedback: %s", overview)
         return overview
 
 class SupervisorAgent:
@@ -422,6 +512,7 @@ class SupervisorAgent:
         Returns:
             Dict: An overview of the cycle, including meta-review critique and research overview.
         """
+        logger.info("Starting a new cycle, iteration %d", context.iteration_number + 1)
         logger.info("Starting a new cycle, iteration %d", context.iteration_number + 1)
         # 1. Generation
         new_hypotheses = self.generation_agent.generate_new_hypotheses(research_goal, context)
@@ -495,6 +586,7 @@ def run_cycle():
     if not current_research_goal:
         raise HTTPException(status_code=400, detail="No research goal set.")
     overview_dict = supervisor.run_cycle(current_research_goal, global_context)
+    logger.info("Run cycle complete. Overview: %s", overview_dict)
     # Build response using best hypotheses from meta review
     top_hypotheses = overview_dict["research_overview"]["top_ranked_hypotheses"]
     response = OverviewResponse(
@@ -519,14 +611,81 @@ def list_hypotheses():
     return [HypothesisResponse(**h.to_dict()) for h in global_context.get_active_hypotheses()]
 
 @app.get("/")
-def root():
+async def root():
     """
-    Root endpoint for the API. Returns a welcome message.
+    Root endpoint for the API. Returns an HTML page with a form to input the research goal.
+    """
+    return responses.HTMLResponse(content="""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>AI Co-Scientist</title>
+    </head>
+    <body>
+        <h1>Welcome to the AI Co-Scientist System</h1>
+        <p>Set your research goal and run cycles to generate hypotheses.</p>
 
-    Returns:
-        dict: A welcome message.
-    """
-    return {"message": "Welcome to the AI Co-Scientist System. Set your research goal and run cycles to generate hypotheses."}
+        <label for="researchGoal">Research Goal:</label><br>
+        <textarea id="researchGoal" name="researchGoal" rows="4" cols="50"></textarea><br><br>
+        <button onclick="submitResearchGoal()">Submit Research Goal</button>
+
+        <h2>Results</h2>
+        <div id="results"></div>
+
+        <script>
+            async function submitResearchGoal() {
+                const researchGoal = document.getElementById('researchGoal').value;
+                const response = await fetch('/research_goal', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ description: researchGoal })
+                });
+                const data = await response.json();
+                document.getElementById('results').innerHTML = `<p>${data.message}</p>`;
+                runCycle(); // Automatically run a cycle after setting the goal
+            }
+
+            async function runCycle() {
+                const response = await fetch('/run_cycle', { method: 'POST' });
+                const data = await response.json();
+
+                let resultsHTML = `<h3>Iteration: ${data.iteration}</h3>`;
+
+                if (data.meta_review_critique.length > 0) {
+                    resultsHTML += `<h4>Meta-Review Critique:</h4><ul>`;
+                    data.meta_review_critique.forEach(item => {
+                        resultsHTML += `<li>${item}</li>`;
+                    });
+                    resultsHTML += `</ul>`;
+                }
+
+                resultsHTML += `<h4>Top Hypotheses:</h4><ul>`;
+                data.top_hypotheses.forEach(hypo => {
+                    resultsHTML += `<li>
+                        <strong>${hypo.title}</strong> (ID: ${hypo.id}, Elo: ${hypo.elo_score.toFixed(2)})<br>
+                        ${hypo.text}<br>
+                        Novelty: ${hypo.novelty_review}, Feasibility: ${hypo.feasibility_review}
+                    </li>`;
+                });
+                resultsHTML += `</ul>`;
+
+                if (data.suggested_next_steps.length > 0){
+                    resultsHTML += `<h4>Suggested Next Steps:</h4><ul>`;
+                    data.suggested_next_steps.forEach(item => {
+                        resultsHTML += `<li>${item}</li>`;
+                    });
+                    resultsHTML += `</ul>`;
+                }
+
+                document.getElementById('results').innerHTML = resultsHTML;
+            }
+        </script>
+    </body>
+    </html>
+    """)
+
 
 ###############################################################################
 # Main Entrypoint
@@ -534,4 +693,4 @@ def root():
 
 if __name__ == "__main__":
     # Run with: uvicorn this_script:app --host 0.0.0.0 --port 8000
-    uvicorn.run("co_scientist:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("proposal-gen-v1:app", host="0.0.0.0", port=8000, reload=False)
