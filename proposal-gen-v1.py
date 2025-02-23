@@ -665,7 +665,7 @@ async def root():
                 data.top_hypotheses.forEach(hypo => {
                     resultsHTML += `<li>
                         <strong>${hypo.title}</strong> (ID: ${hypo.id}, Elo: ${hypo.elo_score.toFixed(2)})<br>
-                        ${hypo.text}<br>
+                        <pre>${hypo.text}</pre><br>
                         Novelty: ${hypo.novelty_review}, Feasibility: ${hypo.feasibility_review}
                     </li>`;
                 });
