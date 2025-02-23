@@ -589,7 +589,7 @@ def set_research_goal(goal: ResearchGoalRequest):
     logger = setup_logger(log_filename)
 
     logger.info("Research goal set: %s", goal.description)
-    return {"message": "Research goal successfully set."}
+    return {"message": "Research goal successfully set. Please wait for results. This may take a few minutes. Please be patient."}
 
 @app.post("/run_cycle", response_model=OverviewResponse)
 def run_cycle():
