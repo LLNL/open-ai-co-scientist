@@ -8,8 +8,10 @@ from openai import OpenAI
 import os
 import datetime
 from fastapi import FastAPI, HTTPException, responses
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
+import yaml
 
 # Configure logging for production readiness.
 # logging.basicConfig(
@@ -19,19 +21,41 @@ import uvicorn
 # )
 # logger = logging.getLogger("co_scientist") # global logger
 
+def load_config(config_path: str) -> Dict:
+    """Loads the configuration from the specified YAML file."""
+    try:
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+            # Convert logging level string to actual level
+            config["logging_level"] = getattr(logging, config["logging_level"].upper(), logging.INFO)
+        return config
+    except FileNotFoundError:
+        print(f"Error: Configuration file not found at {config_path}")
+        exit(1)
+    except yaml.YAMLError as e:
+        print(f"Error parsing YAML in {config_path}: {e}")
+        exit(1)
+    except AttributeError as e:
+        print("Error: Invalid logging level in config file")
+        exit(1)
+
+
 def setup_logger(log_filename):
     logger = logging.getLogger(log_filename)  # Create a logger with the filename
-    logger.setLevel(logging.INFO)
+    logger.setLevel(config["logging_level"])
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     # Remove existing handlers to avoid duplicate logs
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)
 
-    file_handler = logging.FileHandler(log_filename)
+    file_handler = logging.FileHandler(f"{config['log_file_name']}_{log_filename}")
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
     return logger
+
+# Load configuration at the start
+config = load_config("config.yaml")
 
 def call_llm(prompt: str) -> str:
     """
@@ -44,16 +68,14 @@ def call_llm(prompt: str) -> str:
         str: The LLM's response.
     """
     client = OpenAI(
-      base_url="https://openrouter.ai/api/v1",
-      api_key=os.getenv("OPENROUTER_API_KEY")
+        base_url=config["openrouter_base_url"],
+        api_key=os.getenv("OPENROUTER_API_KEY"),
     )
 
     try:
         completion = client.chat.completions.create(
-            model="google/gemini-2.0-flash-thinking-exp:free",  # Or any other suitable model
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
+            model=config["llm_model"],
+            messages=[{"role": "user", "content": prompt}],
         )
     except Exception as e:
         # If the library raises an exception (e.g., for invalid key, rate limit, etc.)
@@ -281,7 +303,7 @@ def run_pairwise_debate(hypoA: Hypothesis, hypoB: Hypothesis) -> Hypothesis:
                 hypoA.hypothesis_id, scoreA, hypoB.hypothesis_id, scoreB, winner.hypothesis_id)
     return winner
 
-def update_elo(winner: Hypothesis, loser: Hypothesis, k_factor: int = 32):
+def update_elo(winner: Hypothesis, loser: Hypothesis, k_factor: int = config["elo_k_factor"]):
     """
     Updates the Elo scores of two hypotheses after a pairwise comparison.
 
@@ -355,9 +377,9 @@ class GenerationAgent:
         prompt = (
             f"Research Goal: {research_goal.description}\n"
             f"Constraints: {research_goal.constraints}\n"
-            "Please propose 2 new hypotheses with rationale.\n"
+            f"Please propose {config['num_hypotheses']} new hypotheses with rationale.\n"
         )
-        raw_output = call_llm_for_generation(prompt, num_hypotheses=2)
+        raw_output = call_llm_for_generation(prompt, num_hypotheses=config["num_hypotheses"])
         new_hypos = []
         for idea in raw_output:
             hypo_id = generate_unique_id("G")
@@ -431,7 +453,7 @@ class EvolutionAgent:
         """
         active = context.get_active_hypotheses()
         sorted_by_elo = sorted(active, key=lambda h: h.elo_score, reverse=True)
-        top_candidates = sorted_by_elo[:top_k]
+        top_candidates = sorted_by_elo[:config["top_k_hypotheses"]]
         new_hypotheses = []
         if len(top_candidates) >= 2:
             new_h = combine_hypotheses(top_candidates[0], top_candidates[1])
@@ -566,6 +588,8 @@ app = FastAPI(title="AI Co-Scientist System", version="1.0")
 global_context = ContextMemory()
 supervisor = SupervisorAgent()
 current_research_goal: Optional[ResearchGoal] = None
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.post("/research_goal", response_model=dict)
 def set_research_goal(goal: ResearchGoalRequest):
@@ -714,4 +738,4 @@ async def root():
 
 if __name__ == "__main__":
     # Run with: uvicorn this_script:app --host 0.0.0.0 --port 8000
-    uvicorn.run("proposal-gen-v1:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("proposal-gen-v1:app", host=config["fastapi_host"], port=config["fastapi_port"], reload=False)

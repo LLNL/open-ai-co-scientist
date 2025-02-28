@@ -46,7 +46,7 @@ The `proposal-gen-v1.py` script implements a multi-agent system that iteratively
     uvicorn proposal-gen-v1:app --host 0.0.0.0 --port 8000
     ```
 4.  **Access the Web Interface:**
-    Open a web browser and go to `http://localhost:8000`.
+    Open a web browser and go to `http://localhost:8000`. (Note: The server log may show `http://0.0.0.0:8000`, which means the server is listening on all network interfaces. However, you should use `localhost` in your browser to access the server from your local machine. You cannot directly type `0.0.0.0` into your browser's address bar.)
 5.  **Enter Research Goal:**
     Enter your research goal in the text area provided.
 6.  **Submit and Run:**
@@ -65,6 +65,28 @@ The system will generate a list of hypotheses related to the research goal. Each
 *   References (if found by the LLM)
 
 The web interface will display the top-ranked hypotheses after each cycle, along with a meta-review critique and suggested next steps. The results are iterative, meaning that the hypotheses should improve over multiple cycles. Log files are created in the `results/` directory for each run.
+
+## Configuration (config.yaml)
+
+The `config.yaml` file contains settings that control the behavior of the AI Co-Scientist system. Here's a detailed explanation of each option:
+
+*   **`openrouter_base_url`**:  This specifies the base URL for the OpenRouter API.  OpenRouter acts as a proxy to various LLMs, providing a consistent interface.  The default value is `"https://openrouter.ai/api/v1"`, which should work without modification.
+
+*   **`llm_model`**: This setting determines which Large Language Model (LLM) the system will use.  The default is `"google/gemini-2.0-flash-thinking-exp:free"`, which is a free model from Google, hosted on OpenRouter. You can change this to use a different model, but ensure it's compatible with the OpenRouter API and the system's prompts.  Refer to the OpenRouter documentation for available models and their identifiers.
+
+*   **`num_hypotheses`**: This controls the number of initial hypotheses generated in each cycle. The default value is `3`. Increasing this number will explore a broader range of ideas, but may also increase processing time and API costs (if using a paid LLM).
+
+*   **`elo_k_factor`**: This parameter, used in the Elo rating system, determines how much the Elo scores change after each comparison between hypotheses.  A higher `elo_k_factor` (default is `32`) means that scores will change more dramatically, making the ranking more sensitive to individual comparisons.  A lower value will result in slower, more gradual changes in ranking.
+
+*   **`top_k_hypotheses`**: This setting specifies how many of the top-ranked hypotheses are used by the `EvolutionAgent` to create new hypotheses. The default is `2`.  Increasing this value might lead to more diverse combinations, but could also dilute the influence of the very best hypotheses.
+
+*   **`logging_level`**:  This controls the verbosity of the logging output.  Valid values are `"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`, and `"CRITICAL"`.  The default is `"INFO"`.  `"DEBUG"` provides the most detailed information, while `"CRITICAL"` only logs the most severe errors.
+
+*   **`log_file_name`**: This is the base name for the log files (without the extension). Log files are stored in the `results/` directory. The default is `"app"`. The system automatically adds a timestamp and the `.txt` extension to the log file name (e.g., `app_2025-02-28_09-18-00.txt`).
+
+*   **`fastapi_host`**: This setting controls the network interface that the FastAPI application will listen on. The default value, `"0.0.0.0"`, makes the application accessible from any network interface, including your local machine and potentially other computers on your network.  You could change this to `"127.0.0.1"` to restrict access to only your local machine.
+
+*   **`fastapi_port`**: This specifies the port number that the FastAPI application will use. The default is `8000`. You can change this if you have another application already using port 8000 or if you prefer a different port for other reasons.
 
 ## Known Limitations
 

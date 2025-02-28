@@ -1,4 +1,5 @@
 openai
 fastapi
-pydantic
 uvicorn
+pydantic
+PyYAML
