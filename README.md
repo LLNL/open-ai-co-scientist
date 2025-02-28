@@ -78,3 +78,47 @@ The web interface will display the top-ranked hypotheses after each cycle, along
 *   **Single Cycle Execution:** The `/run_cycle` endpoint only executes one cycle at a time.  A mechanism for running multiple cycles automatically would be beneficial.
 *   **OpenAI Dependency:** Although OpenRouter is used, the code still imports and uses the `OpenAI` class from the `openai` library. It should be updated to use a more generic client if other LLM providers are to be supported.
 * **Logging:** The logging configuration is set up for each new research goal, which could lead to multiple loggers being created if the research goal is set multiple times without restarting the application.
+
+## Diagram
+
+```mermaid
+flowchart TD
+    A[Start] --> B[Set Research Goal]
+    B --> C[Initialize Context Memory]
+    C --> D[Run Cycle]
+    
+    subgraph CycleProcess["Supervisor Agent Run Cycle"]
+        D1[Generation: Create New Hypotheses] --> D2[Add to Context Memory]
+        D2 --> D3[Reflection: Review Hypotheses]
+        D3 --> D4[Ranking: Run Tournament]
+        D4 --> D5[Evolution: Improve Top Ideas]
+        D5 --> D6[Add Evolved Hypotheses to Context]
+        D6 --> D7[Review Evolved Hypotheses]
+        D7 --> D8[Ranking: Run Tournament Again]
+        D8 --> D9[Proximity Analysis]
+        D9 --> D10[Meta-Review]
+        D10 --> D11[Increment Iteration Number]
+    end
+    
+    D --> CycleProcess
+    CycleProcess --> E[Return Overview Results]
+    
+    subgraph APIEndpoints["API Endpoints"]
+        F1[POST /research_goal]
+        F2[POST /run_cycle]
+        F3[GET /hypotheses]
+        F4[GET /]
+    end
+    
+    F1 --> B
+    F2 --> D
+    F3 -.-> G[List Active Hypotheses]
+    
+    subgraph LLMCalls["LLM API Calls"]
+        L1[call_llm_for_generation]
+        L2[call_llm_for_reflection]
+    end
+    
+    D1 --> L1
+    D3 --> L2
+```
