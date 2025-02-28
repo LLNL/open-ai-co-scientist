@@ -20,14 +20,7 @@ import yaml
 
 import time
 
-# Configure logging for production readiness.
-# logging.basicConfig(
-#     level=logging.INFO,
-#     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-#     filename="app.log",
-# )
-# logger = logging.getLogger("co_scientist") # global logger
-
+# Configure logging
 def load_config(config_path: str) -> Dict:
     """Loads the configuration from the specified YAML file."""
     try:
@@ -84,10 +77,16 @@ def call_llm(prompt: str) -> str:
             model=config["llm_model"],
             messages=[{"role": "user", "content": prompt}],
         )
-    except openai.RateLimitError as e:
-        logger.warning(f"Rate limit exceeded: {e}")
+    except Exception as e:
         retries = config.get("max_retries", 3)
         delay = config.get("initial_retry_delay", 1)  # seconds
+
+        if "Rate limit exceeded" in str(e):
+            logger.warning(f"Rate limit exceeded: {e}")
+            error_message = f"Rate limit exceeded: {e}"
+        else:
+            logger.error(f"API call failed with exception: {e}")
+            error_message = f"API call failed with exception: {e}"
 
         for attempt in range(retries):
             try:
@@ -99,28 +98,28 @@ def call_llm(prompt: str) -> str:
                     messages=[{"role": "user", "content": prompt}],
                 )
                 if completion.choices and len(completion.choices) > 0:
-                  return completion.choices[0].message.content
-            except openai.RateLimitError:
+                    return completion.choices[0].message.content
+            except Exception as inner_e:
+                if "Rate limit exceeded" in str(inner_e):
+                    logger.warning(f"Rate limit exceeded (retry attempt {attempt + 1}): {inner_e}")
+                    error_message = f"Rate limit exceeded: {inner_e}"
+                else:
+                    logger.error(f"API call failed with exception (retry attempt {attempt + 1}): {inner_e}")
+                    error_message = f"API call failed with exception: {inner_e}"
+
                 if attempt == retries - 1:
                     logger.error("Max retries reached. Giving up.")
-                    return "API call failed after multiple retries due to rate limiting."
-            except Exception as e:
-                logger.error(f"API call failed with exception: {e}")
-                return f"API call failed with exception: {e}"
-        logger.error("Max retries reached without a successful response.")
-        return "API call failed after multiple retries."
+                    return f"API call failed after multiple retries. Error: {error_message}" # Detailed error
 
-    except Exception as e:
-        # If the library raises an exception (e.g., for invalid key, etc.)
-        logger.error(f"API call failed with exception: {e}")
-        return f"API call failed with exception: {e}"  # Return the error message
+        logger.error("Max retries reached without a successful response.")
+        return f"API call failed after multiple retries. Error: {error_message}"  # Detailed error
+
+    # If no exception, you can safely access attributes
+    if completion.choices and len(completion.choices) > 0:
+        return completion.choices[0].message.content
     else:
-        # If no exception, you can safely access attributes
-        if completion.choices and len(completion.choices) > 0:
-            return completion.choices[0].message.content
-        else:
-            logger.error("No choices in the response: %s", completion.dict())
-            return f"No choices in the response: {completion.dict()}"
+        logger.error("No choices in the response: %s", completion)
+        return f"No choices in the response: {completion}"
 
 
 
@@ -240,9 +239,9 @@ def call_llm_for_generation(prompt: str, num_hypotheses: int = 3) -> List[Dict]:
     logger.info("LLM response: %s", response)
 
     if "API call failed" in response:
-        # If the call failed, log it and return an empty list
+        # If the call failed, log it and return the error message
         logger.error(f"LLM call failed: {response}")
-        return []
+        return [{"title": "Error", "text": response}]  # Return error as a hypothesis
 
     try:
         # Remove potential Markdown code block formatting
@@ -259,11 +258,12 @@ def call_llm_for_generation(prompt: str, num_hypotheses: int = 3) -> List[Dict]:
 
         # Basic validation: Check if the response is a list and each item has 'title' and 'text'
         if not isinstance(hypotheses, list) or not all(isinstance(h, dict) and "title" in h and "text" in h for h in hypotheses):
-          raise ValueError("Invalid JSON format: Expected a list of objects with 'title' and 'text' keys.")
+            error_message = "Invalid JSON format: Expected a list of objects with 'title' and 'text' keys."
+            raise ValueError(error_message)
     except (json.JSONDecodeError, ValueError) as e:
         logger.error("Could not parse LLM response as JSON: %s", response)
         logger.error(f"Error: {e}")
-        return []  # Return an empty list in case of parsing failure
+        return [{"title": "Error", "text": f"Could not parse LLM response: {e}"}]  # Return error as a hypothesis
 
     return hypotheses
 
@@ -288,43 +288,54 @@ def call_llm_for_reflection(hypothesis_text: str) -> Dict:
     response = call_llm(prompt)
     logger.info("LLM reflection for hypothesis: %s, response: %s", hypothesis_text, response)
 
-     # Initialize default values
+    if "API call failed" in response:
+        # If the call failed, log it and return the error message
+        logger.error(f"LLM call failed: {response}")
+        return {
+            "novelty_review": "ERROR",
+            "feasibility_review": "ERROR",
+            "comment": response,  # Return the error message
+            "references": [],
+        }
+
+    # Initialize default values
     novelty_review = "MEDIUM"
     feasibility_review = "MEDIUM"
     comment = "Could not parse LLM response."
     references = []
 
     try:
-        if "API call failed" not in response:
-            # Remove potential Markdown code block formatting
-            response = response.strip()
-            if response.startswith("```json"):
-                response = response[7:]
-            if response.endswith("```"):
-                response = response[:-3]
-            response = response.strip()
+        # Remove potential Markdown code block formatting
+        response = response.strip()
+        if response.startswith("```json"):
+            response = response[7:]
+        if response.endswith("```"):
+            response = response[:-3]
+        response = response.strip()
 
-            # Parse the JSON response
-            data = json.loads(response)
-            novelty_review = data.get("novelty_review", "MEDIUM")
-            feasibility_review = data.get("feasibility_review", "MEDIUM")
-            comment = data.get("comment", "Could not parse LLM response.")
-            references = data.get("references", [])
+        # Parse the JSON response
+        data = json.loads(response)
+        novelty_review = data.get("novelty_review", "MEDIUM")
+        feasibility_review = data.get("feasibility_review", "MEDIUM")
+        comment = data.get("comment", "Could not parse LLM response.")
+        references = data.get("references", [])
 
-            # Basic validation of review values
-            if not any(level in novelty_review.upper() for level in ["HIGH", "MEDIUM", "LOW"]):
-                logger.warning("Invalid novelty review value: %s", novelty_review)
-                novelty_review = "MEDIUM"
-            if not any(level in feasibility_review.upper() for level in ["HIGH", "MEDIUM", "LOW"]):
-                logger.warning("Invalid feasibility review value: %s", feasibility_review)
-                feasibility_review = "MEDIUM"
-            if not isinstance(comment, str):
-                logger.warning("Invalid comment value: %s", comment)
-                comment = "Could not parse LLM response."
+        # Basic validation of review values
+        if not any(level in novelty_review.upper() for level in ["HIGH", "MEDIUM", "LOW"]):
+            logger.warning("Invalid novelty review value: %s", novelty_review)
+            novelty_review = "MEDIUM"
+        if not any(level in feasibility_review.upper() for level in ["HIGH", "MEDIUM", "LOW"]):
+            logger.warning("Invalid feasibility review value: %s", feasibility_review)
+            feasibility_review = "MEDIUM"
+        if not isinstance(comment, str):
+            logger.warning("Invalid comment value: %s", comment)
+            comment = "Could not parse LLM response."
 
     except (json.JSONDecodeError, AttributeError, KeyError) as e:
         logger.warning("Error parsing LLM response: %s", e)
         logger.warning("Response: %s", response)
+        comment = f"Could not parse LLM response: {e}"
+
     return {
         "novelty_review": novelty_review,
         "feasibility_review": feasibility_review,
@@ -611,37 +622,72 @@ class SupervisorAgent:
             context (ContextMemory): The current context memory.
 
         Returns:
-            Dict: An overview of the cycle, including meta-review critique and research overview.
+            Dict: A dictionary containing detailed information about each step of the cycle.
         """
         logger.info("Starting a new cycle, iteration %d", context.iteration_number + 1)
-        logger.info("Starting a new cycle, iteration %d", context.iteration_number + 1)
+
+        # Initialize a dictionary to store cycle details
+        cycle_details = {
+            "iteration": context.iteration_number + 1,
+            "steps": {},
+            "meta_review": {}
+        }
+
         # 1. Generation
         new_hypotheses = self.generation_agent.generate_new_hypotheses(research_goal, context)
         for nh in new_hypotheses:
             context.add_hypothesis(nh)
+        cycle_details["steps"]["generation"] = {
+            "hypotheses": [h.to_dict() for h in new_hypotheses]
+        }
 
         # 2. Reflection
         active_hypos = context.get_active_hypotheses()
         self.reflection_agent.review_hypotheses(active_hypos, context)
+        cycle_details["steps"]["reflection"] = {
+            "hypotheses": [h.to_dict() for h in active_hypos]
+        }
+
         # 3. Ranking (Tournament)
         active_hypos = context.get_active_hypotheses()
         self.ranking_agent.run_tournament(active_hypos, context)
+        cycle_details["steps"]["ranking1"] = {
+            "tournament_results": context.tournament_results,
+            "hypotheses": [h.to_dict() for h in active_hypos]
+        }
+
         # 4. Evolution (Improve top ideas)
         new_evolved = self.evolution_agent.evolve_hypotheses(top_k=2, context=context)
         for nh in new_evolved:
             context.add_hypothesis(nh)
         if new_evolved:
             self.reflection_agent.review_hypotheses(new_evolved, context)
+        cycle_details["steps"]["evolution"] = {
+            "hypotheses": [h.to_dict() for h in new_evolved]
+        }
+
         # 5. Ranking again
         active_hypos = context.get_active_hypotheses()
         self.ranking_agent.run_tournament(active_hypos, context)
+        cycle_details["steps"]["ranking2"] = {
+            "tournament_results": context.tournament_results,
+            "hypotheses": [h.to_dict() for h in active_hypos]
+
+        }
+
         # 6. Proximity Analysis
         adjacency = self.proximity_agent.build_proximity_graph(active_hypos, context)
+        cycle_details["steps"]["proximity"] = {
+            "adjacency_graph": adjacency
+        }
+
         # 7. Meta-review
         overview = self.meta_review_agent.summarize_and_feedback(context, adjacency)
+        cycle_details["meta_review"] = overview
         context.iteration_number += 1
+
         logger.info("Cycle complete, iteration now %d", context.iteration_number)
-        return overview
+        return cycle_details
 
 ###############################################################################
 # FastAPI Application
@@ -680,7 +726,7 @@ def set_research_goal(goal: ResearchGoalRequest):
     logger.info("Research goal set: %s", goal.description)
     return {"message": "Research goal successfully set. Please wait for results. This may take a few minutes. Please be patient."}
 
-@app.post("/run_cycle", response_model=OverviewResponse)
+@app.post("/run_cycle")
 def run_cycle():
     """
     Runs a single cycle of hypothesis generation, review, ranking, and evolution.
@@ -689,24 +735,14 @@ def run_cycle():
         HTTPException: If no research goal has been set.
 
     Returns:
-        OverviewResponse: An overview of the cycle, including the iteration number, meta-review
-                          critique, top hypotheses, and suggested next steps.
+        Dict: A dictionary containing detailed information about each step of the cycle.
     """
     global current_research_goal, global_context
     if not current_research_goal:
         raise HTTPException(status_code=400, detail="No research goal set.")
-    overview_dict = supervisor.run_cycle(current_research_goal, global_context)
-    logger.info("Run cycle complete. Overview: %s", overview_dict)
-    # Build response using best hypotheses from meta review
-    top_hypotheses = overview_dict["research_overview"]["top_ranked_hypotheses"]
-    response = OverviewResponse(
-        iteration=global_context.iteration_number,
-        meta_review_critique=overview_dict["meta_review_critique"],
-        top_hypotheses=[HypothesisResponse(**h) for h in top_hypotheses],
-        suggested_next_steps=overview_dict["research_overview"]["suggested_next_steps"]
-    )
-
-    return response
+    cycle_details = supervisor.run_cycle(current_research_goal, global_context)
+    logger.info("Run cycle complete. Overview: %s", cycle_details)
+    return cycle_details
 
 @app.get("/hypotheses", response_model=List[HypothesisResponse])
 def list_hypotheses():
@@ -743,6 +779,9 @@ async def root():
         <h2>Results</h2>
         <div id="results"></div>
 
+        <h2>Errors</h2>
+        <div id="errors" style="color: red;"></div>
+
         <script>
             async function submitResearchGoal() {
                 const researchGoal = document.getElementById('researchGoal').value;
@@ -753,6 +792,16 @@ async def root():
                     },
                     body: JSON.stringify({ description: researchGoal })
                 });
+
+                // Clear previous errors
+                document.getElementById('errors').innerHTML = '';
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    document.getElementById('errors').innerHTML = `<p>Error: ${errorData.detail}</p>`;
+                    return; // Stop execution if there's an error
+                }
+
                 const data = await response.json();
                 document.getElementById('results').innerHTML = `<p>${data.message}</p>`;
                 runCycle(); // Automatically run a cycle after setting the goal
@@ -760,54 +809,89 @@ async def root():
 
             async function runCycle() {
                 const response = await fetch('/run_cycle', { method: 'POST' });
+
+                // Clear previous errors
+                document.getElementById('errors').innerHTML = '';
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    document.getElementById('errors').innerHTML = `<p>Error: ${errorData.detail}</p>`;
+                    return; // Stop execution if there's an error
+                }
+
                 const data = await response.json();
 
                 let resultsHTML = `<h3>Iteration: ${data.iteration}</h3>`;
 
-                if (data.meta_review_critique.length > 0) {
+                // Display details for each step
+                for (const stepName in data.steps) {
+                    if (data.steps.hasOwnProperty(stepName)) {
+                        const step = data.steps[stepName];
+                        resultsHTML += `<h4>Step: ${stepName}</h4>`;
+
+                        if (step.hypotheses) {
+                            resultsHTML += `<h5>Hypotheses:</h5><ul>`;
+                            step.hypotheses.forEach(hypo => {
+                                resultsHTML += `<li>
+                                    <strong>${hypo.title}</strong> (ID: ${hypo.id}, Elo: ${hypo.elo_score.toFixed(2)})<br>`;
+                                if (hypo.parent_ids && hypo.parent_ids.length > 0) {
+                                    resultsHTML += `<em>Parent IDs: ${hypo.parent_ids.join(', ')}</em><br>`;
+                                }
+                                resultsHTML += `<p>${hypo.text}</p>`;
+                                if (hypo.novelty_review) {
+                                    resultsHTML += `<p>Novelty: ${hypo.novelty_review}</p>`;
+                                }
+                                if (hypo.feasibility_review){
+                                    resultsHTML += `<p>Feasibility: ${hypo.feasibility_review}</p>`;
+                                }
+
+                                if (hypo.review_comments && hypo.review_comments.length > 0) {
+                                    resultsHTML += `<p>Review Comments:</p><ul>`;
+                                    hypo.review_comments.forEach(comment => {
+                                        resultsHTML += `<li>${comment}</li>`;
+                                    });
+                                    resultsHTML += `</ul>`;
+                                }
+                                if (hypo.references && hypo.references.length > 0) {
+                                    resultsHTML += `<p>References:</p><ul>`;
+                                    hypo.references.forEach(ref => {
+                                        resultsHTML += `<li>${ref}</li>`;
+                                    });
+                                    resultsHTML += `</ul>`;
+                                }
+                                resultsHTML += `</li>`;
+
+                            });
+                            resultsHTML += `</ul>`;
+                        }
+                        if (stepName.startsWith("ranking") && step.tournament_results){
+                            resultsHTML += '<h5>Ranking Results</h5>';
+                            resultsHTML += '<ul>';
+                            for (let i = 0; i < step.tournament_results.length; i++){
+                                const result = step.tournament_results[i];
+                                resultsHTML += `<li>${result.winner} beat ${result.loser}</li>`;
+                            }
+                            resultsHTML += '</ul>';
+                        }
+
+                        if (step.adjacency_graph) {
+                            resultsHTML += `<p>Adjacency Graph: ${JSON.stringify(step.adjacency_graph)}</p>`;
+                        }
+                    }
+                }
+
+                // Display meta-review information
+                if (data.meta_review.meta_review_critique && data.meta_review.meta_review_critique.length > 0) {
                     resultsHTML += `<h4>Meta-Review Critique:</h4><ul>`;
-                    data.meta_review_critique.forEach(item => {
+                    data.meta_review.meta_review_critique.forEach(item => {
                         resultsHTML += `<li>${item}</li>`;
                     });
                     resultsHTML += `</ul>`;
                 }
 
-                resultsHTML += `<h4>Top Hypotheses:</h4>`;
-                data.top_hypotheses.forEach(hypo => {
-                    resultsHTML += `<ul><li>
-                        <strong>${hypo.title}</strong> (ID: ${hypo.id}, Elo: ${hypo.elo_score.toFixed(2)})<br>`;
-
-                    // Display parent IDs if they exist (for combined hypotheses)
-                    if (hypo.parent_ids && hypo.parent_ids.length > 0) {
-                        resultsHTML += `<em>Parent IDs: ${hypo.parent_ids.join(', ')}</em><br>`;
-                    }
-
-                    resultsHTML += `<p><strong>Hypothesis:</strong> ${hypo.text}</p>`;
-                    resultsHTML += `<p><strong>Novelty:</strong> ${hypo.novelty_review}</p>`;
-                    resultsHTML += `<p><strong>Feasibility:</strong> ${hypo.feasibility_review}</p>`;
-
-                    if (hypo.review_comments && hypo.review_comments.length > 0) {
-                        resultsHTML += `<p><strong>Review Comments:</strong></p><ul>`;
-                        hypo.review_comments.forEach(comment => {
-                            resultsHTML += `<li>${comment}</li>`;
-                        });
-                        resultsHTML += `</ul>`;
-                    }
-
-                    if (hypo.references && hypo.references.length > 0) {
-                        resultsHTML += `<p><strong>References:</strong></p><ul>`;
-                        hypo.references.forEach(ref => {
-                            resultsHTML += `<li>${ref}</li>`;
-                        });
-                        resultsHTML += `</ul>`;
-                    }
-
-                    resultsHTML += `</li></ul>`;
-                });
-
-                if (data.suggested_next_steps.length > 0){
+                if (data.meta_review.research_overview && data.meta_review.research_overview.suggested_next_steps.length > 0) {
                     resultsHTML += `<h4>Suggested Next Steps:</h4><ul>`;
-                    data.suggested_next_steps.forEach(item => {
+                    data.meta_review.research_overview.suggested_next_steps.forEach(item => {
                         resultsHTML += `<li>${item}</li>`;
                     });
                     resultsHTML += `</ul>`;
