@@ -4,6 +4,7 @@ import math
 import random
 import logging
 from typing import List, Dict, Optional
+import openai
 from openai import OpenAI
 import os
 import datetime
@@ -12,6 +13,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
 import yaml
+
+################################################################################
+# Utility Functions
+################################################################################
+
+import time
 
 # Configure logging for production readiness.
 # logging.basicConfig(
@@ -77,10 +84,36 @@ def call_llm(prompt: str) -> str:
             model=config["llm_model"],
             messages=[{"role": "user", "content": prompt}],
         )
+    except openai.RateLimitError as e:
+        logger.warning(f"Rate limit exceeded: {e}")
+        retries = config.get("max_retries", 3)
+        delay = config.get("initial_retry_delay", 1)  # seconds
+
+        for attempt in range(retries):
+            try:
+                wait_time = delay * (2 ** attempt)  # Exponential backoff
+                logger.info(f"Retrying in {wait_time} seconds (attempt {attempt + 1}/{retries})")
+                time.sleep(wait_time)
+                completion = client.chat.completions.create(
+                    model=config["llm_model"],
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                if completion.choices and len(completion.choices) > 0:
+                  return completion.choices[0].message.content
+            except openai.RateLimitError:
+                if attempt == retries - 1:
+                    logger.error("Max retries reached. Giving up.")
+                    return "API call failed after multiple retries due to rate limiting."
+            except Exception as e:
+                logger.error(f"API call failed with exception: {e}")
+                return f"API call failed with exception: {e}"
+        logger.error("Max retries reached without a successful response.")
+        return "API call failed after multiple retries."
+
     except Exception as e:
-        # If the library raises an exception (e.g., for invalid key, rate limit, etc.)
+        # If the library raises an exception (e.g., for invalid key, etc.)
         logger.error(f"API call failed with exception: {e}")
-        return f"API call failed with exception: {e}" # Return the error message
+        return f"API call failed with exception: {e}"  # Return the error message
     else:
         # If no exception, you can safely access attributes
         if completion.choices and len(completion.choices) > 0:
@@ -88,6 +121,8 @@ def call_llm(prompt: str) -> str:
         else:
             logger.error("No choices in the response: %s", completion.dict())
             return f"No choices in the response: {completion.dict()}"
+
+
 
 ###############################################################################
 # Data Models and Pydantic Schemas
@@ -584,6 +619,7 @@ class SupervisorAgent:
         new_hypotheses = self.generation_agent.generate_new_hypotheses(research_goal, context)
         for nh in new_hypotheses:
             context.add_hypothesis(nh)
+
         # 2. Reflection
         active_hypos = context.get_active_hypotheses()
         self.reflection_agent.review_hypotheses(active_hypos, context)
@@ -669,6 +705,7 @@ def run_cycle():
         top_hypotheses=[HypothesisResponse(**h) for h in top_hypotheses],
         suggested_next_steps=overview_dict["research_overview"]["suggested_next_steps"]
     )
+
     return response
 
 @app.get("/hypotheses", response_model=List[HypothesisResponse])
