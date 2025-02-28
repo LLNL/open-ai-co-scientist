@@ -65,7 +65,7 @@ The system will generate a list of hypotheses related to the research goal. Each
 *   Novelty and feasibility assessments (HIGH, MEDIUM, LOW)
 *   An Elo score (representing its relative strength)
 *   Comments from the LLM review
-*   References (if found by the LLM)
+*   References (if found by the LLM). These are PubMed identifiers (PMIDs).
 
 The web interface will display the top-ranked hypotheses after each cycle, along with a meta-review critique and suggested next steps. The results are iterative, meaning that the hypotheses should improve over multiple cycles. Log files are created in the `results/` directory for each run.
 

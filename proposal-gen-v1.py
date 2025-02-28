@@ -218,6 +218,62 @@ def generate_unique_id(prefix="H") -> str:
 
 import json
 
+# --- VIS.JS INTEGRATION ---
+def generate_visjs_graph(adjacency_graph: Dict) -> str:
+    """
+    Generates HTML and JavaScript code for a vis.js graph.
+
+    Args:
+        adjacency_graph (Dict): The adjacency graph data.
+
+    Returns:
+        str: A string containing the HTML and JavaScript code to embed the graph.
+    """
+    nodes = []
+    edges = []
+
+    for node_id, connections in adjacency_graph.items():
+        nodes.append(f"{{id: '{node_id}', label: '{node_id}'}}")
+        for connection in connections:
+            if connection['similarity'] > 0.2:
+                edges.append(f"{{from: '{node_id}', to: '{connection['other_id']}', label: '{connection['similarity']:.2f}', arrows: 'to'}}")
+
+    nodes_str = ",\n".join(nodes)
+    edges_str = ",\n".join(edges)
+
+    return f"""
+        <div id="mynetwork"></div>
+        <p>
+            <b>How to read the graph:</b><br>
+            - Each node (circle) represents an item.<br>
+            - Lines (edges) between nodes indicate a relationship.<br>
+            - The number on each edge represents the similarity score between the connected nodes. Higher numbers mean greater similarity. Only similarities above 0.2 are shown.<br>
+        </p>
+        <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+        <script type="text/javascript">
+            var nodes = new vis.DataSet([
+                {nodes_str}
+            ]);
+            var edges = new vis.DataSet([
+                {edges_str}
+            ]);
+            var container = document.getElementById('mynetwork');
+            var data = {{
+                nodes: nodes,
+                edges: edges
+            }};
+            var options = {{
+              edges: {{
+                smooth: {{
+                  enabled: true,
+                  type: "dynamic",
+                }},
+              }},
+            }};
+            var network = new vis.Network(container, data, options);
+        </script>
+    """
+
 def call_llm_for_generation(prompt: str, num_hypotheses: int = 3) -> List[Dict]:
     """
     Calls a Large Language Model (LLM) for generating hypotheses.
@@ -595,7 +651,7 @@ class MetaReviewAgent:
             "research_overview": {
                 "top_ranked_hypotheses": [h.to_dict() for h in best_hypotheses],
                 "suggested_next_steps": [
-                    "Conduct further in vitro experiments on top hypotheses.",
+                    "Conduct further in experiments on top hypotheses.",
                     "Collect domain expert feedback and refine constraints."
                 ]
             }
@@ -823,11 +879,26 @@ async def root():
 
                 let resultsHTML = `<h3>Iteration: ${data.iteration}</h3>`;
 
+                // Define step explanations
+                const stepExplanations = {
+                    generation: "Generates new hypotheses based on the research goal and current context.",
+                    reflection: "Reviews the generated hypotheses for novelty and feasibility.",
+                    ranking1: "Ranks hypotheses based on a pairwise comparison (tournament).",
+                    evolution: "Combines the top-ranked hypotheses to create new, evolved hypotheses.",
+                    ranking2: "Ranks hypotheses again after the evolution step.",
+                    proximity: "Analyzes the similarity between hypotheses.",
+                };
+
                 // Display details for each step
                 for (const stepName in data.steps) {
                     if (data.steps.hasOwnProperty(stepName)) {
                         const step = data.steps[stepName];
                         resultsHTML += `<h4>Step: ${stepName}</h4>`;
+
+                        // Add explanation if available
+                        if (stepExplanations[stepName]) {
+                            resultsHTML += `<p>${stepExplanations[stepName]}</p>`;
+                        }
 
                         if (step.hypotheses) {
                             resultsHTML += `<h5>Hypotheses:</h5><ul>`;
@@ -875,6 +946,8 @@ async def root():
                         }
 
                         if (step.adjacency_graph) {
+                           // this does not work somehow TODO
+                           // resultsHTML += generate_visjs_graph(step.adjacency_graph);
                             resultsHTML += `<p>Adjacency Graph: ${JSON.stringify(step.adjacency_graph)}</p>`;
                         }
                     }
