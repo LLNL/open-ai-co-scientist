@@ -831,7 +831,7 @@ async def root():
 
                         if (step.hypotheses) {
                             resultsHTML += `<h5>Hypotheses:</h5><ul>`;
-                            step.hypotheses.forEach(hypo => {
+                            step.hypotheses.sort((a, b) => b.elo_score - a.elo_score).forEach(hypo => {
                                 resultsHTML += `<li>
                                     <strong>${hypo.title}</strong> (ID: ${hypo.id}, Elo: ${hypo.elo_score.toFixed(2)})<br>`;
                                 if (hypo.parent_ids && hypo.parent_ids.length > 0) {
