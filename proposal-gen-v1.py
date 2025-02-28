@@ -745,12 +745,27 @@ async def root():
                         resultsHTML += `<em>Parent IDs: ${hypo.parent_ids.join(', ')}</em><br>`;
                     }
 
-                    // Debug: Display the hypothesis object as a string
-                    resultsHTML += `<pre>DEBUG: ${JSON.stringify(hypo)}</pre><br>`;
+                    resultsHTML += `<p><strong>Hypothesis:</strong> ${hypo.text}</p>`;
+                    resultsHTML += `<p><strong>Novelty:</strong> ${hypo.novelty_review}</p>`;
+                    resultsHTML += `<p><strong>Feasibility:</strong> ${hypo.feasibility_review}</p>`;
 
-                    resultsHTML += `<pre>${hypo.text}</pre><br>
-                        Novelty: ${hypo.novelty_review}, Feasibility: ${hypo.feasibility_review}
-                    </li></ul>`;
+                    if (hypo.review_comments && hypo.review_comments.length > 0) {
+                        resultsHTML += `<p><strong>Review Comments:</strong></p><ul>`;
+                        hypo.review_comments.forEach(comment => {
+                            resultsHTML += `<li>${comment}</li>`;
+                        });
+                        resultsHTML += `</ul>`;
+                    }
+
+                    if (hypo.references && hypo.references.length > 0) {
+                        resultsHTML += `<p><strong>References:</strong></p><ul>`;
+                        hypo.references.forEach(ref => {
+                            resultsHTML += `<li>${ref}</li>`;
+                        });
+                        resultsHTML += `</ul>`;
+                    }
+
+                    resultsHTML += `</li></ul>`;
                 });
 
                 if (data.suggested_next_steps.length > 0){
