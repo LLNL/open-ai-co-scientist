@@ -182,6 +182,8 @@ def generate_unique_id(prefix="H") -> str:
     """
     return f"{prefix}{random.randint(1000, 9999)}"
 
+import json
+
 def call_llm_for_generation(prompt: str, num_hypotheses: int = 3) -> List[Dict]:
     """
     Calls a Large Language Model (LLM) for generating hypotheses.
@@ -193,37 +195,40 @@ def call_llm_for_generation(prompt: str, num_hypotheses: int = 3) -> List[Dict]:
     Returns:
         List[Dict]: A list of dictionaries, each representing a generated hypothesis.
                     Each dictionary contains "title" and "text" keys.
-    TODO: design the prompt so it will generate tile and text in the right format as expected
     """
     logger.info("LLM generation called with prompt: %s, num_hypotheses: %d", prompt, num_hypotheses)
-    hypotheses = []
-    for _ in range(num_hypotheses):
-        response = call_llm(prompt)
-        logger.info("LLM response: %s", response)
-        # Basic parsing, assuming the LLM returns a string with title and text.
-        #  A more robust parser might be needed depending on the LLM's output format.
-        if "API call failed" in response:
-            # If the call failed, log it and skip to next iteration
-            logger.error(f"LLM call failed: {response}")
-            continue
 
-        try:
-            # Attempt to extract title and text, handling potential formatting variations
-            title = response.split("Title:")[1].split("Text:")[0].strip()
-            text = response.split("Text:")[1].strip()
-            logger.info("Parsed title: %s, text: %s", title, text)
-        except IndexError:
-            logger.warning("Could not parse response: %s", response)
-            # Try a simpler split, assuming title and text are separated by a newline
-            parts = response.split("\n", 1)  # Split into at most two parts
-            if len(parts) == 2:
-                title, text = parts[0].strip(), parts[1].strip()
-                logger.info("Parsed title: %s, text: %s", title, text)
-            else:
-                title = "Untitled"
-                text = response
-                logger.warning("Using entire response as text: %s", text)
-        hypotheses.append({"title": title, "text": text})
+    # Modify the prompt to request JSON output
+    prompt += "\n\nPlease return the response as a JSON array of objects, where each object has a 'title' and 'text' key."
+
+    response = call_llm(prompt)
+    logger.info("LLM response: %s", response)
+
+    if "API call failed" in response:
+        # If the call failed, log it and return an empty list
+        logger.error(f"LLM call failed: {response}")
+        return []
+
+    try:
+        # Remove potential Markdown code block formatting
+        response = response.strip()
+        if response.startswith("```json"):
+            response = response[7:]
+        if response.endswith("```"):
+            response = response[:-3]
+        response = response.strip()
+
+        # Attempt to parse the response as JSON
+        hypotheses = json.loads(response)
+        logger.info("Parsed hypotheses: %s", hypotheses)
+
+        # Basic validation: Check if the response is a list and each item has 'title' and 'text'
+        if not isinstance(hypotheses, list) or not all(isinstance(h, dict) and "title" in h and "text" in h for h in hypotheses):
+          raise ValueError("Invalid JSON format: Expected a list of objects with 'title' and 'text' keys.")
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.error("Could not parse LLM response as JSON: %s", response)
+        logger.error(f"Error: {e}")
+        return []  # Return an empty list in case of parsing failure
 
     return hypotheses
 
@@ -240,38 +245,56 @@ def call_llm_for_reflection(hypothesis_text: str) -> Dict:
     """
     prompt = (
         f"Review the following hypothesis and provide a novelty assessment (HIGH, MEDIUM, or LOW), "
-        f"a feasibility assessment (HIGH, MEDIUM, or LOW), a comment, and a list of references (PMIDs):\n\n"
-        f"Hypothesis: {hypothesis_text}"
+        f"a feasibility assessment (HIGH, MEDIUM, or LOW), a comment, and a list of references (PMIDs) in JSON format:\n\n"
+        f"Hypothesis: {hypothesis_text}\n\n"
+        f"Return the response as a JSON object with the following keys: 'novelty_review', 'feasibility_review', 'comment', 'references'."
+
     )
     response = call_llm(prompt)
     logger.info("LLM reflection for hypothesis: %s, response: %s", hypothesis_text, response)
 
-    # Initialize default values in case parsing fails
+     # Initialize default values
     novelty_review = "MEDIUM"
     feasibility_review = "MEDIUM"
     comment = "Could not parse LLM response."
     references = []
 
-    # Attempt to parse the LLM response.  The parsing logic may need
-    # to be adjusted based on the actual format of the LLM's output.
     try:
-        if "API call failed" not in response: # Check for API failure
-            parts = response.split(",")  # Split into parts based on commas
-            novelty_review = [p.split(":")[1].strip() for p in parts if "novelty" in p.lower()][0]
-            feasibility_review = [p.split(":")[1].strip() for p in parts if "feasibility" in p.lower()][0]
-            comment = [p.split(":")[1].strip() for p in parts if "comment" in p.lower()][0]
+        if "API call failed" not in response:
+            # Remove potential Markdown code block formatting
+            response = response.strip()
+            if response.startswith("```json"):
+                response = response[7:]
+            if response.endswith("```"):
+                response = response[:-3]
+            response = response.strip()
 
-            # Extract references (assuming they are PMIDs)
-            references = [ref.strip() for ref in response.split() if ref.startswith("PMID:")]
-    except (IndexError, AttributeError) as e:
-        logger.warning(f"Error parsing LLM response: {e}")
-        logger.warning(f"Response: {response}")
+            # Parse the JSON response
+            data = json.loads(response)
+            novelty_review = data.get("novelty_review", "MEDIUM")
+            feasibility_review = data.get("feasibility_review", "MEDIUM")
+            comment = data.get("comment", "Could not parse LLM response.")
+            references = data.get("references", [])
 
+            # Basic validation of review values
+            if not any(level in novelty_review.upper() for level in ["HIGH", "MEDIUM", "LOW"]):
+                logger.warning("Invalid novelty review value: %s", novelty_review)
+                novelty_review = "MEDIUM"
+            if not any(level in feasibility_review.upper() for level in ["HIGH", "MEDIUM", "LOW"]):
+                logger.warning("Invalid feasibility review value: %s", feasibility_review)
+                feasibility_review = "MEDIUM"
+            if not isinstance(comment, str):
+                logger.warning("Invalid comment value: %s", comment)
+                comment = "Could not parse LLM response."
+
+    except (json.JSONDecodeError, AttributeError, KeyError) as e:
+        logger.warning("Error parsing LLM response: %s", e)
+        logger.warning("Response: %s", response)
     return {
         "novelty_review": novelty_review,
         "feasibility_review": feasibility_review,
         "comment": comment,
-        "references": references
+        "references": references,
     }
 
 def run_pairwise_debate(hypoA: Hypothesis, hypoB: Hypothesis) -> Hypothesis:
@@ -343,6 +366,7 @@ def combine_hypotheses(hypoA: Hypothesis, hypoB: Hypothesis) -> Hypothesis:
     logger.info("Combined hypotheses %s and %s into %s", hypoA.hypothesis_id, hypoB.hypothesis_id, new_id)
     new_hypothesis = Hypothesis(new_id, combined_title, combined_text)
     new_hypothesis.parent_ids = [hypoA.hypothesis_id, hypoB.hypothesis_id]  # Store parent IDs
+    logger.info("New hypothesis parent_ids: %s", new_hypothesis.parent_ids) # Added logging
     return new_hypothesis
 
 def similarity_score(textA: str, textB: str) -> float:
@@ -462,6 +486,7 @@ class EvolutionAgent:
         if len(top_candidates) >= 2:
             new_h = combine_hypotheses(top_candidates[0], top_candidates[1])
             logger.info("Evolved hypothesis: %s", new_h.to_dict())
+            logger.info("top_candidates: %s", [h.to_dict() for h in top_candidates]) # Added logging
             new_hypotheses.append(new_h)
         return new_hypotheses
 
