@@ -13,7 +13,7 @@ openrouter_base_url: "https://openrouter.ai/api/v1"
 llm_model: "google/gemini-2.0-flash-001"
 
 # Number of hypotheses to generate
-num_hypotheses: 3
+num_hypotheses: 6
 
 # Elo K-factor
 elo_k_factor: 32
@@ -32,3 +32,8 @@ fastapi_host: "0.0.0.0"
 
 # FastAPI port
 fastapi_port: 8000
+
+# Temperature settings for each step
+step_temperatures:
+  generation: 0.7
+  reflection: 0.5

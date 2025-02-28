@@ -38,6 +38,9 @@ def load_config(config_path: str) -> Dict:
     except AttributeError as e:
         print("Error: Invalid logging level in config file")
         exit(1)
+    except KeyError as e:
+        print(f"Error: Missing key in config file: {e}")
+        exit(1)
 
 
 def setup_logger(log_filename):
@@ -57,9 +60,16 @@ def setup_logger(log_filename):
 # Load configuration at the start
 config = load_config("config.yaml")
 
-def call_llm(prompt: str) -> str:
+def call_llm(prompt: str, temperature: float = 0.7) -> str:
     """
     Calls an LLM via the OpenRouter API and returns the response.
+
+    Args:
+        prompt (str): The input prompt for the LLM.
+        temperature (float, optional): The temperature setting for the LLM. Defaults to 0.7.
+
+    Returns:
+        str: The LLM's response.
 
     Args:
         prompt (str): The input prompt for the LLM.
@@ -76,6 +86,7 @@ def call_llm(prompt: str) -> str:
         completion = client.chat.completions.create(
             model=config["llm_model"],
             messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,  # Pass temperature to the API call
         )
     except Exception as e:
         retries = config.get("max_retries", 3)
@@ -96,6 +107,7 @@ def call_llm(prompt: str) -> str:
                 completion = client.chat.completions.create(
                     model=config["llm_model"],
                     messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature,  # Pass temperature to the API call
                 )
                 if completion.choices and len(completion.choices) > 0:
                     return completion.choices[0].message.content
@@ -291,7 +303,8 @@ def call_llm_for_generation(prompt: str, num_hypotheses: int = 3) -> List[Dict]:
     # Modify the prompt to request JSON output
     prompt += "\n\nPlease return the response as a JSON array of objects, where each object has a 'title' and 'text' key."
 
-    response = call_llm(prompt)
+    # Call LLM with the appropriate temperature
+    response = call_llm(prompt, temperature=config["step_temperatures"]["generation"])
     logger.info("LLM response: %s", response)
 
     if "API call failed" in response:
@@ -341,7 +354,8 @@ def call_llm_for_reflection(hypothesis_text: str) -> Dict:
         f"Return the response as a JSON object with the following keys: 'novelty_review', 'feasibility_review', 'comment', 'references'."
 
     )
-    response = call_llm(prompt)
+    # Call LLM with the appropriate temperature
+    response = call_llm(prompt, temperature=config["step_temperatures"]["reflection"])
     logger.info("LLM reflection for hypothesis: %s, response: %s", hypothesis_text, response)
 
     if "API call failed" in response:
@@ -422,7 +436,19 @@ def run_pairwise_debate(hypoA: Hypothesis, hypoB: Hypothesis) -> Hypothesis:
                  the novelty and feasibility scores.
         """
         mapping = {"HIGH": 3, "MEDIUM": 2, "LOW": 1, None: 0}
-        return mapping.get(h.novelty_review, 0) + mapping.get(h.feasibility_review, 0)
+        score_novelty = 0
+        if isinstance(h.novelty_review, str):
+            score_novelty = mapping.get(h.novelty_review, 0)
+        else:
+            logger.error(f"Invalid novelty_review type: {type(h.novelty_review)}, value: {h.novelty_review}")
+
+        score_feasibility = 0
+        if isinstance(h.feasibility_review, str):
+            score_feasibility = mapping.get(h.feasibility_review, 0)
+        else:
+            logger.error(f"Invalid feasibility_review type: {type(h.feasibility_review)}, value: {h.feasibility_review}")
+
+        return score_novelty + score_feasibility
     scoreA = score(hypoA)
     scoreB = score(hypoB)
     winner = hypoA if scoreA > scoreB else hypoB if scoreB > scoreA else random.choice([hypoA, hypoB])
