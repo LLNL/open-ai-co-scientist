@@ -104,6 +104,7 @@ class Hypothesis:
         self.review_comments: List[str] = []
         self.references: List[str] = []
         self.is_active: bool = True
+        self.parent_ids: List[str] = []  # Store IDs of parent hypotheses
 
     def to_dict(self) -> dict:
         return {
@@ -116,6 +117,7 @@ class Hypothesis:
             "review_comments": self.review_comments,
             "references": self.references,
             "is_active": self.is_active,
+            "parent_ids": self.parent_ids,  # Include parent IDs
         }
 
 class ResearchGoal:
@@ -339,7 +341,9 @@ def combine_hypotheses(hypoA: Hypothesis, hypoB: Hypothesis) -> Hypothesis:
     combined_title = f"Combined: {hypoA.title} & {hypoB.title}"
     combined_text = f"{hypoA.text}\n\nAdditionally, {hypoB.text}"
     logger.info("Combined hypotheses %s and %s into %s", hypoA.hypothesis_id, hypoB.hypothesis_id, new_id)
-    return Hypothesis(new_id, combined_title, combined_text)
+    new_hypothesis = Hypothesis(new_id, combined_title, combined_text)
+    new_hypothesis.parent_ids = [hypoA.hypothesis_id, hypoB.hypothesis_id]  # Store parent IDs
+    return new_hypothesis
 
 def similarity_score(textA: str, textB: str) -> float:
     """
@@ -706,15 +710,23 @@ async def root():
                     resultsHTML += `</ul>`;
                 }
 
-                resultsHTML += `<h4>Top Hypotheses:</h4><ul>`;
+                resultsHTML += `<h4>Top Hypotheses:</h4>`;
                 data.top_hypotheses.forEach(hypo => {
-                    resultsHTML += `<li>
-                        <strong>${hypo.title}</strong> (ID: ${hypo.id}, Elo: ${hypo.elo_score.toFixed(2)})<br>
-                        <pre>${hypo.text}</pre><br>
+                    resultsHTML += `<ul><li>
+                        <strong>${hypo.title}</strong> (ID: ${hypo.id}, Elo: ${hypo.elo_score.toFixed(2)})<br>`;
+
+                    // Display parent IDs if they exist (for combined hypotheses)
+                    if (hypo.parent_ids && hypo.parent_ids.length > 0) {
+                        resultsHTML += `<em>Parent IDs: ${hypo.parent_ids.join(', ')}</em><br>`;
+                    }
+
+                    // Debug: Display the hypothesis object as a string
+                    resultsHTML += `<pre>DEBUG: ${JSON.stringify(hypo)}</pre><br>`;
+
+                    resultsHTML += `<pre>${hypo.text}</pre><br>
                         Novelty: ${hypo.novelty_review}, Feasibility: ${hypo.feasibility_review}
-                    </li>`;
+                    </li></ul>`;
                 });
-                resultsHTML += `</ul>`;
 
                 if (data.suggested_next_steps.length > 0){
                     resultsHTML += `<h4>Suggested Next Steps:</h4><ul>`;
