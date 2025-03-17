@@ -2,6 +2,8 @@
 
 This project implements an AI-powered system for generating, reviewing, ranking, and evolving research hypotheses. It leverages Large Language Models (LLMs) for various tasks, including hypothesis generation, reflection, and comparison. The system is designed to assist researchers in exploring a research space and identifying promising hypotheses.
 
+https://storage.googleapis.com/coscientist_paper/ai_coscientist.pdf
+
 ## Overview
 
 The `proposal-gen-v1.py` script implements a multi-agent system that iteratively generates and refines research hypotheses. The core components include:
