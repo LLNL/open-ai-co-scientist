@@ -497,21 +497,79 @@ def combine_hypotheses(hypoA: Hypothesis, hypoB: Hypothesis) -> Hypothesis:
     logger.info("New hypothesis parent_ids: %s", new_hypothesis.parent_ids) # Added logging
     return new_hypothesis
 
+# Global variable to store the sentence transformer model
+_sentence_transformer_model = None
+
+def get_sentence_transformer_model():
+    """
+    Returns a singleton instance of the sentence transformer model.
+    Loads the model only once to improve performance.
+    
+    Returns:
+        SentenceTransformer: The sentence transformer model.
+    """
+    global _sentence_transformer_model
+    if _sentence_transformer_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            logger.info("Loading sentence transformer model...")
+            # Using a smaller model for efficiency, can be replaced with larger models for better accuracy
+            _sentence_transformer_model = SentenceTransformer('all-MiniLM-L6-v2')
+            logger.info("Sentence transformer model loaded successfully")
+        except ImportError as e:
+            logger.error(f"Failed to import sentence_transformers: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to load sentence transformer model: {e}")
+            raise
+    return _sentence_transformer_model
+
 def similarity_score(textA: str, textB: str) -> float:
     """
-    Calculates a similarity score between two text strings.
-    This is a placeholder. In a real implementation, this would use a more sophisticated
-    similarity measure like cosine similarity or Jaccard index.
+    Calculates a similarity score between two text strings using sentence embeddings
+    and cosine similarity.
 
     Args:
         textA (str): The first text string.
         textB (str): The second text string.
 
     Returns:
-        float: A similarity score between 0 and 1 (inclusive). For now, it returns a random number.
+        float: A similarity score between 0 and 1 (inclusive), where 1 indicates
+              identical semantic meaning and 0 indicates completely different meanings.
     """
-    logger.info("Similarity score between %s and %s: %f (placeholder)", textA, textB, random.uniform(0,1))
-    return random.uniform(0, 1)
+    try:
+        # Handle empty strings
+        if not textA.strip() or not textB.strip():
+            logger.warning("Empty string provided to similarity_score")
+            return 0.0
+            
+        # Get the model
+        model = get_sentence_transformer_model()
+        
+        # Generate embeddings
+        embedding_a = model.encode(textA, convert_to_tensor=True)
+        embedding_b = model.encode(textB, convert_to_tensor=True)
+        
+        # Calculate cosine similarity
+        from sklearn.metrics.pairwise import cosine_similarity
+        import numpy as np
+        
+        # Convert to numpy arrays if they're tensors
+        if hasattr(embedding_a, 'cpu') and hasattr(embedding_b, 'cpu'):
+            embedding_a = embedding_a.cpu().numpy().reshape(1, -1)
+            embedding_b = embedding_b.cpu().numpy().reshape(1, -1)
+        
+        similarity = cosine_similarity(embedding_a, embedding_b)[0][0]
+        
+        # Ensure the result is between 0 and 1
+        similarity = float(max(0.0, min(1.0, similarity)))
+        
+        logger.info(f"Similarity score between texts: {similarity:.4f}")
+        return similarity
+    except Exception as e:
+        logger.error(f"Error calculating similarity score: {e}")
+        # Fallback to a default value in case of error
+        return 0.5
 
 
 ###############################################################################
