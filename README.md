@@ -119,37 +119,6 @@ The `config.yaml` file provides default settings for the system. Many of these c
 *   **Prompt Engineering:** Prompts are functional but could be further optimized.
 *   **OpenAI Dependency:** The `openai` library is used as the client for OpenRouter.
 
-*   **`openrouter_base_url`**:  This specifies the base URL for the OpenRouter API.  OpenRouter acts as a proxy to various LLMs, providing a consistent interface.  The default value is `"https://openrouter.ai/api/v1"`, which should work without modification.
-
-*   **`llm_model`**: This setting determines which Large Language Model (LLM) the system will use.  The default is `"google/gemini-2.0-flash-thinking-exp:free"`, which is a free model from Google, hosted on OpenRouter. You can change this to use a different model, but ensure it's compatible with the OpenRouter API and the system's prompts.  Refer to the OpenRouter documentation for available models and their identifiers.
-
-*   **`num_hypotheses`**: This controls the number of initial hypotheses generated in each cycle. The default value is `3`. Increasing this number will explore a broader range of ideas, but may also increase processing time and API costs (if using a paid LLM).
-
-*   **`elo_k_factor`**: This parameter, used in the Elo rating system, determines how much the Elo scores change after each comparison between hypotheses.  A higher `elo_k_factor` (default is `32`) means that scores will change more dramatically, making the ranking more sensitive to individual comparisons.  A lower value will result in slower, more gradual changes in ranking.
-
-*   **`top_k_hypotheses`**: This setting specifies how many of the top-ranked hypotheses are used by the `EvolutionAgent` to create new hypotheses. The default is `2`.  Increasing this value might lead to more diverse combinations, but could also dilute the influence of the very best hypotheses.
-
-*   **`logging_level`**:  This controls the verbosity of the logging output.  Valid values are `"DEBUG"`, `"INFO"`, `"WARNING"`, `"ERROR"`, and `"CRITICAL"`.  The default is `"INFO"`.  `"DEBUG"` provides the most detailed information, while `"CRITICAL"` only logs the most severe errors.
-
-*   **`log_file_name`**: This is the base name for the log files (without the extension). Log files are stored in the `results/` directory. The default is `"app"`. The system automatically adds a timestamp and the `.txt` extension to the log file name (e.g., `app_2025-02-28_09-18-00.txt`).
-
-*   **`fastapi_host`**: This setting controls the network interface that the FastAPI application will listen on. The default value, `"0.0.0.0"`, makes the application accessible from any network interface, including your local machine and potentially other computers on your network.  You could change this to `"127.0.0.1"` to restrict access to only your local machine.
-
-*   **`fastapi_port`**: This specifies the port number that the FastAPI application will use. The default is `8000`. You can change this if you have another application already using port 8000 or if you prefer a different port for other reasons.
-
-## Known Limitations
-
-*   **LLM Dependency:** The quality of the results heavily depends on the capabilities of the underlying LLM.
-*   **Parsing LLM Output:** The current implementation uses simple string parsing to extract information from the LLM responses. This may be brittle and require adjustments depending on the LLM's output format.
-*   **Similarity Score Placeholder:** The `similarity_score` function currently returns a random number. A robust implementation would use a more sophisticated similarity measure.
-*   **Limited Evolution:** The `EvolutionAgent` only combines the top two hypotheses. More advanced evolutionary strategies could be implemented.
-*   **In-Memory Storage:** The current implementation uses in-memory storage. For production use, a persistent storage solution (e.g., a database) would be necessary.
-*   **Error Handling:** While basic error handling is included, more comprehensive error handling and logging should be implemented for a production-ready system.
-*   **Prompt Engineering:** The prompts used for LLM calls are relatively simple. More sophisticated prompt engineering could improve the quality of the results.
-*   **Single Cycle Execution:** The `/run_cycle` endpoint only executes one cycle at a time.  A mechanism for running multiple cycles automatically would be beneficial.
-*   **OpenAI Dependency:** Although OpenRouter is used, the code still imports and uses the `OpenAI` class from the `openai` library. It should be updated to use a more generic client if other LLM providers are to be supported.
-* **Logging:** The logging configuration is set up for each new research goal, which could lead to multiple loggers being created if the research goal is set multiple times without restarting the application.
-
 ## Diagram
 
 ```mermaid
