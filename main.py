@@ -686,10 +686,9 @@ class ProximityAgent:
             context (ContextMemory): The current context memory.
 
         Returns:
-            Dict: An adjacency list representing the proximity graph.  Keys are hypothesis IDs,
-                  and values are lists of dictionaries. Each dictionary in the list represents
-                  a connection to another hypothesis and contains "other_id" (the ID of the other
-                  hypothesis) and "similarity" (the similarity score between the two hypotheses).
+            Dict: A dictionary containing:
+                - "adjacency_graph": An adjacency list representing the proximity graph.
+                - "graph_html": HTML and JavaScript code for visualizing the graph.
         """
         adjacency = {}
         for i in range(len(hypotheses)):
@@ -702,8 +701,15 @@ class ProximityAgent:
                     "other_id": hypotheses[j].hypothesis_id,
                     "similarity": sim
                 })
+        
+        # Generate the HTML for the graph visualization
+        graph_html = generate_visjs_graph(adjacency)
+        
         logger.info("Built proximity graph: %s", adjacency)
-        return adjacency
+        return {
+            "adjacency_graph": adjacency,
+            "graph_html": graph_html
+        }
 
 class MetaReviewAgent:
     def summarize_and_feedback(self, context: ContextMemory, adjacency: Dict) -> Dict:
@@ -816,13 +822,14 @@ class SupervisorAgent:
         }
 
         # 6. Proximity Analysis
-        adjacency = self.proximity_agent.build_proximity_graph(active_hypos, context)
+        adjacency_result = self.proximity_agent.build_proximity_graph(active_hypos, context)
         cycle_details["steps"]["proximity"] = {
-            "adjacency_graph": adjacency
+            "adjacency_graph": adjacency_result["adjacency_graph"],
+            "graph_html": adjacency_result["graph_html"]
         }
 
         # 7. Meta-review
-        overview = self.meta_review_agent.summarize_and_feedback(context, adjacency)
+        overview = self.meta_review_agent.summarize_and_feedback(context, adjacency_result["adjacency_graph"])
         cycle_details["meta_review"] = overview
         context.iteration_number += 1
 
@@ -1029,9 +1036,14 @@ async def root():
                             resultsHTML += '</ul>';
                         }
 
-                        if (step.adjacency_graph) {
-                           // this does not work somehow TODO
-                           // resultsHTML += generate_visjs_graph(step.adjacency_graph);
+                        if (step.graph_html) {
+                            // Display the graph visualization
+                            resultsHTML += `<h5>Hypothesis Similarity Graph:</h5>`;
+                            resultsHTML += `<div class="graph-container" style="height: 500px; border: 1px solid #ccc; margin-bottom: 20px;">`;
+                            resultsHTML += step.graph_html;
+                            resultsHTML += `</div>`;
+                        } else if (step.adjacency_graph) {
+                            // Fallback to displaying the raw adjacency graph if graph_html is not available
                             resultsHTML += `<p>Adjacency Graph: ${JSON.stringify(step.adjacency_graph)}</p>`;
                         }
                     }
@@ -1068,4 +1080,4 @@ async def root():
 
 if __name__ == "__main__":
     # Run with: uvicorn this_script:app --host 0.0.0.0 --port 8000
-    uvicorn.run("proposal-gen-v1:app", host=config["fastapi_host"], port=config["fastapi_port"], reload=False)
+    uvicorn.run("main:app", host=config["fastapi_host"], port=config["fastapi_port"], reload=False)
