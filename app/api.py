@@ -1,4 +1,6 @@
 import datetime
+import logging # Import logging
+import os # Import os
 from typing import List, Optional, Dict
 
 from fastapi import FastAPI, HTTPException, responses
@@ -51,6 +53,39 @@ def set_research_goal(goal: ResearchGoalRequest):
     except Exception as e:
         logger.error(f"Error processing research goal: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error setting research goal: {e}")
+
+    # --- Setup Timestamped File Logging ---
+    try:
+        # Get the specific logger instance used by the app
+        app_logger = logging.getLogger("aicoscientist") # Match the name used in utils.py
+
+        # Remove existing FileHandlers to avoid duplicates
+        for handler in app_logger.handlers[:]:
+            if isinstance(handler, logging.FileHandler):
+                logger.info(f"Removing existing file handler: {handler.baseFilename}")
+                app_logger.removeHandler(handler)
+                handler.close() # Close the handler
+
+        # Create a new timestamped log file name
+        log_dir = "results" # Assuming logs go in 'results' directory at project root
+        os.makedirs(log_dir, exist_ok=True) # Ensure directory exists
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        # Use the log file name base from config if available
+        log_file_base = "app_log" # Default base name
+        # TODO: Access config safely if needed: from .config import config; log_file_base = config.get('log_file_name', 'app_log')
+        log_filename = os.path.join(log_dir, f"{log_file_base}_{timestamp}.txt")
+
+        # Create and add the new file handler
+        file_handler = logging.FileHandler(log_filename)
+        formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s") # Consistent format
+        file_handler.setFormatter(formatter)
+        app_logger.addHandler(file_handler)
+        logger.info(f"Logging for this goal directed to: {log_filename}")
+
+    except Exception as log_e:
+        logger.error(f"Failed to set up file logging: {log_e}", exc_info=True)
+        # Decide if this should be a fatal error for the request
+        # raise HTTPException(status_code=500, detail=f"Failed to setup logging: {log_e}")
 
     logger.info("--- Endpoint /research_goal END ---")
     return {"message": "Research goal successfully set. Ready to run cycles."}
