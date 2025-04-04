@@ -129,6 +129,11 @@ async def root_endpoint():
         <button onclick="submitResearchGoal()">Submit Research Goal</button>
         <button onclick="runCycle()">Run Next Cycle</button> <!-- Added manual run button -->
 
+        <p style="margin-top: 15px; font-size: 0.9em; color: #333;">
+            <em>Instructions:</em> Enter a research goal and click "Submit Research Goal" to start a new process.
+            Click "Run Next Cycle" to perform another iteration on the current set of hypotheses.
+        </p>
+
         <h2>Results</h2>
         <div id="results"><p>Submit a research goal to begin.</p></div>
 
