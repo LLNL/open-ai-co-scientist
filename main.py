@@ -231,60 +231,56 @@ def generate_unique_id(prefix="H") -> str:
 import json
 
 # --- VIS.JS INTEGRATION ---
-def generate_visjs_graph(adjacency_graph: Dict) -> str:
+def generate_visjs_data(adjacency_graph: Dict) -> Dict[str, str]:
     """
-    Generates HTML and JavaScript code for a vis.js graph.
+    Generates node and edge data strings for vis.js graph.
 
     Args:
         adjacency_graph (Dict): The adjacency graph data.
 
     Returns:
-        str: A string containing the HTML and JavaScript code to embed the graph.
+        Dict[str, str]: A dictionary containing 'nodes_str' and 'edges_str'.
     """
     nodes = []
     edges = []
 
+    # Check if adjacency_graph is a dictionary
+    if not isinstance(adjacency_graph, dict):
+        logger.error(f"Invalid adjacency_graph type: {type(adjacency_graph)}. Expected dict.")
+        return {"nodes_str": "", "edges_str": ""}
+
     for node_id, connections in adjacency_graph.items():
+        # Ensure node_id is treated as a string for JS
         nodes.append(f"{{id: '{node_id}', label: '{node_id}'}}")
-        for connection in connections:
-            if connection['similarity'] > 0.2:
-                edges.append(f"{{from: '{node_id}', to: '{connection['other_id']}', label: '{connection['similarity']:.2f}', arrows: 'to'}}")
+        # Check if connections is a list
+        if isinstance(connections, list):
+            for connection in connections:
+                 # Check if connection is a dictionary and has 'similarity'
+                if isinstance(connection, dict) and 'similarity' in connection:
+                    # Ensure similarity is checked correctly
+                    if isinstance(connection.get('similarity'), (int, float)) and connection['similarity'] > 0.2:
+                         # Ensure 'from' and 'to' are strings for JS and 'other_id' exists
+                        if 'other_id' in connection:
+                            edges.append(f"{{from: '{node_id}', to: '{connection['other_id']}', label: '{connection['similarity']:.2f}', arrows: 'to'}}")
+                        else:
+                            logger.warning(f"Skipping edge from {node_id} due to missing 'other_id' in connection: {connection}")
+                    # Log skipped edges due to low similarity or non-numeric similarity
+                    elif not (isinstance(connection.get('similarity'), (int, float)) and connection['similarity'] > 0.2):
+                         logger.debug(f"Skipping edge from {node_id} to {connection.get('other_id', 'N/A')} due to low/invalid similarity: {connection.get('similarity', 'N/A')}")
+                else:
+                    logger.warning(f"Skipping invalid connection format for node {node_id}: {connection}")
+        else:
+             logger.warning(f"Skipping invalid connections format for node {node_id}: {connections}")
+
 
     nodes_str = ",\n".join(nodes)
     edges_str = ",\n".join(edges)
 
-    return f"""
-        <div id="mynetwork"></div>
-        <p>
-            <b>How to read the graph:</b><br>
-            - Each node (circle) represents an item.<br>
-            - Lines (edges) between nodes indicate a relationship.<br>
-            - The number on each edge represents the similarity score between the connected nodes. Higher numbers mean greater similarity. Only similarities above 0.2 are shown.<br>
-        </p>
-        <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-        <script type="text/javascript">
-            var nodes = new vis.DataSet([
-                {nodes_str}
-            ]);
-            var edges = new vis.DataSet([
-                {edges_str}
-            ]);
-            var container = document.getElementById('mynetwork');
-            var data = {{
-                nodes: nodes,
-                edges: edges
-            }};
-            var options = {{
-              edges: {{
-                smooth: {{
-                  enabled: true,
-                  type: "dynamic",
-                }},
-              }},
-            }};
-            var network = new vis.Network(container, data, options);
-        </script>
-    """
+    return {
+        "nodes_str": nodes_str,
+        "edges_str": edges_str
+    }
+
 
 def call_llm_for_generation(prompt: str, num_hypotheses: int = 3) -> List[Dict]:
     """
@@ -688,27 +684,39 @@ class ProximityAgent:
         Returns:
             Dict: A dictionary containing:
                 - "adjacency_graph": An adjacency list representing the proximity graph.
-                - "graph_html": HTML and JavaScript code for visualizing the graph.
+                - "nodes_str": JavaScript string for vis.js nodes.
+                - "edges_str": JavaScript string for vis.js edges.
         """
         adjacency = {}
-        for i in range(len(hypotheses)):
-            adjacency[hypotheses[i].hypothesis_id] = []
-            for j in range(len(hypotheses)):
+        # Ensure we only process active hypotheses if needed, or all as currently done
+        active_hypotheses = context.get_active_hypotheses() # Use context to get active ones
+
+        for i in range(len(active_hypotheses)):
+            hypo_i = active_hypotheses[i]
+            adjacency[hypo_i.hypothesis_id] = []
+            for j in range(len(active_hypotheses)):
                 if i == j:
                     continue
-                sim = similarity_score(hypotheses[i].text, hypotheses[j].text)
-                adjacency[hypotheses[i].hypothesis_id].append({
-                    "other_id": hypotheses[j].hypothesis_id,
-                    "similarity": sim
-                })
-        
-        # Generate the HTML for the graph visualization
-        graph_html = generate_visjs_graph(adjacency)
-        
-        logger.info("Built proximity graph: %s", adjacency)
+                hypo_j = active_hypotheses[j]
+                # Ensure text is not empty before calculating similarity
+                if hypo_i.text and hypo_j.text:
+                    sim = similarity_score(hypo_i.text, hypo_j.text)
+                    adjacency[hypo_i.hypothesis_id].append({
+                        "other_id": hypo_j.hypothesis_id,
+                        "similarity": sim
+                    })
+                else:
+                     logger.warning(f"Skipping similarity for hypothesis {hypo_i.hypothesis_id} or {hypo_j.hypothesis_id} due to empty text.")
+
+
+        # Generate the data strings for the graph visualization
+        visjs_data = generate_visjs_data(adjacency)
+
+        logger.info("Built proximity graph adjacency: %s", adjacency)
         return {
             "adjacency_graph": adjacency,
-            "graph_html": graph_html
+            "nodes_str": visjs_data["nodes_str"],
+            "edges_str": visjs_data["edges_str"]
         }
 
 class MetaReviewAgent:
@@ -822,10 +830,12 @@ class SupervisorAgent:
         }
 
         # 6. Proximity Analysis
-        adjacency_result = self.proximity_agent.build_proximity_graph(active_hypos, context)
+        # Pass active_hypos directly, ProximityAgent now gets active ones from context
+        proximity_result = self.proximity_agent.build_proximity_graph(active_hypos, context)
         cycle_details["steps"]["proximity"] = {
-            "adjacency_graph": adjacency_result["adjacency_graph"],
-            "graph_html": adjacency_result["graph_html"]
+            "adjacency_graph": proximity_result["adjacency_graph"],
+            "nodes_str": proximity_result["nodes_str"],
+            "edges_str": proximity_result["edges_str"]
         }
 
         # 7. Meta-review
@@ -914,6 +924,20 @@ async def root():
     <html>
     <head>
         <title>AI Co-Scientist</title>
+        <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+        <style>
+            #mynetwork {
+                width: 100%;
+                height: 500px; /* Explicit height for the graph container */
+                border: 1px solid lightgray;
+                margin-bottom: 20px; /* Add some space below the graph */
+            }
+            .graph-container p { /* Style the explanation text */
+                 margin-top: 5px;
+                 font-size: 0.9em;
+                 color: #555;
+            }
+        </style>
     </head>
     <body>
         <h1>Welcome to the AI Co-Scientist System</h1>
@@ -1036,15 +1060,22 @@ async def root():
                             resultsHTML += '</ul>';
                         }
 
-                        if (step.graph_html) {
-                            // Display the graph visualization
+                        // Handle graph data from proximity step
+                        if (stepName === "proximity" && step.nodes_str && step.edges_str) {
                             resultsHTML += `<h5>Hypothesis Similarity Graph:</h5>`;
-                            resultsHTML += `<div class="graph-container" style="height: 500px; border: 1px solid #ccc; margin-bottom: 20px;">`;
-                            resultsHTML += step.graph_html;
-                            resultsHTML += `</div>`;
-                        } else if (step.adjacency_graph) {
-                            // Fallback to displaying the raw adjacency graph if graph_html is not available
-                            resultsHTML += `<p>Adjacency Graph: ${JSON.stringify(step.adjacency_graph)}</p>`;
+                            // Add the container div for the graph
+                            resultsHTML += `<div id="mynetwork"></div>`;
+                            resultsHTML += `<p>
+                                <b>How to read the graph:</b><br>
+                                - Each node (circle) represents an item.<br>
+                                - Lines (edges) between nodes indicate a relationship.<br>
+                                - The number on each edge represents the similarity score between the connected nodes. Higher numbers mean greater similarity. Only similarities above 0.2 are shown.<br>
+                            </p>`;
+                            // Store data for later initialization
+                            graphData = { nodesStr: step.nodes_str, edgesStr: step.edges_str };
+                        } else if (stepName === "proximity" && step.adjacency_graph) {
+                             // Fallback if only adjacency graph is available
+                             resultsHTML += `<p>Adjacency Graph (raw): ${JSON.stringify(step.adjacency_graph)}</p>`;
                         }
                     }
                 }
@@ -1067,6 +1098,66 @@ async def root():
                 }
 
                 document.getElementById('results').innerHTML = resultsHTML;
+
+                // Initialize the graph if data is available
+                if (typeof graphData !== 'undefined' && graphData.nodesStr && graphData.edgesStr) {
+                    initializeGraph(graphData.nodesStr, graphData.edgesStr);
+                }
+            }
+
+            // Function to initialize the Vis.js graph
+            function initializeGraph(nodesStr, edgesStr) {
+                try {
+                    // IMPORTANT: Need to parse the string data into actual JS arrays/objects
+                    // This assumes the strings are valid JS array content (e.g., "{id: 'H1'}, {id: 'H2'}")
+                    // We wrap them in [] and use Function constructor for safe evaluation
+                    const nodesArray = new Function(`return [${nodesStr}]`)();
+                    const edgesArray = new Function(`return [${edgesStr}]`)();
+
+                    var nodes = new vis.DataSet(nodesArray);
+                    var edges = new vis.DataSet(edgesArray);
+
+                    var container = document.getElementById('mynetwork');
+                    if (!container) {
+                        console.error("Graph container #mynetwork not found!");
+                        return;
+                    }
+                    var data = {
+                        nodes: nodes,
+                        edges: edges
+                    };
+                    var options = {
+                        edges: {
+                            smooth: {
+                                enabled: true,
+                                type: "dynamic",
+                            },
+                            font: {
+                                size: 12,
+                                align: 'middle'
+                            }
+                        },
+                        nodes: {
+                            shape: 'circle',
+                            font: {
+                                size: 14
+                            }
+                        },
+                        physics: { // Add physics for better layout
+                            stabilization: true,
+                            barnesHut: {
+                                gravitationalConstant: -2000,
+                                centralGravity: 0.3,
+                                springLength: 150,
+                                springConstant: 0.04,
+                            }
+                        }
+                    };
+                    var network = new vis.Network(container, data, options);
+                } catch (e) {
+                    console.error("Error initializing Vis.js graph:", e);
+                    document.getElementById('errors').innerHTML += `<p>Error initializing graph: ${e.message}</p>`;
+                }
             }
         </script>
     </body>
