@@ -1,6 +1,7 @@
 import datetime
-import logging # Import logging
-import os # Import os
+import logging
+import os
+import requests # Import requests
 from typing import List, Optional, Dict
 
 from fastapi import FastAPI, HTTPException, responses
@@ -25,6 +26,32 @@ app = FastAPI(title="AI Co-Scientist - Hypothesis Evolution System", version="1.
 global_context = ContextMemory()
 supervisor = SupervisorAgent()
 current_research_goal: Optional[ResearchGoal] = None
+available_models: List[str] = [] # Global list to store model IDs
+
+# --- Startup Event ---
+@app.on_event("startup")
+async def fetch_available_models():
+    """Fetches available models from OpenRouter on startup."""
+    global available_models
+    logger.info("Fetching available models from OpenRouter...")
+    try:
+        response = requests.get("https://openrouter.ai/api/v1/models", timeout=10) # Added timeout
+        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        models_data = response.json().get("data", [])
+        # Extract model IDs, maybe filter/sort later
+        # For now, just get all IDs
+        available_models = sorted([model.get("id") for model in models_data if model.get("id")])
+        logger.info(f"Successfully fetched {len(available_models)} models.")
+        # Example: Log first few models
+        if available_models:
+            logger.info(f"Example models: {available_models[:5]}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to fetch models from OpenRouter: {e}")
+        available_models = [] # Ensure it's an empty list on failure
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during model fetching: {e}", exc_info=True)
+        available_models = []
+
 
 # --- Static Files ---
 try:
@@ -134,10 +161,16 @@ def list_hypotheses_endpoint():
 
 @app.get("/")
 async def root_endpoint():
-    """Serves the main HTML page."""
+    """Serves the main HTML page, injecting available models."""
+    global available_models
     logger.debug("Serving root HTML page.")
-    # Corrected HTML content with safer JavaScript string generation
-    return responses.HTMLResponse(content="""
+    # Pass the models list to the template (will be used by JS)
+    # Need json import here
+    import json
+    models_json = json.dumps(available_models)
+
+    # Use regular string concatenation or triple quotes, NOT f-string for the large HTML block
+    html_content = """
     <!DOCTYPE html>
     <html>
     <head>
@@ -177,7 +210,10 @@ async def root_endpoint():
             <summary style="cursor: pointer; font-weight: bold;">Advanced Settings</summary>
             <div style="margin-top: 10px;">
                 <label for="llm_model">LLM Model:</label><br>
-                <input type="text" id="llm_model" name="llm_model" placeholder="e.g., google/gemini-flash-1.5" style="width: 90%; margin-bottom: 10px;"><br>
+                <select id="llm_model" name="llm_model" style="width: 90%; margin-bottom: 10px;">
+                    <!-- Options will be populated by JavaScript -->
+                    <option value="">-- Select Model --</option>
+                </select><br>
 
                 <label for="num_hypotheses">Number of Hypotheses per Cycle:</label>
                 <input type="number" id="num_hypotheses" name="num_hypotheses" min="1" max="10" placeholder="3" style="width: 50px; margin-bottom: 10px;"><br>
@@ -214,6 +250,10 @@ async def root_endpoint():
         <div id="errors"></div>
 
         <script>
+            // Inject the models list from the backend
+            const availableModels = {models_json};
+            const defaultModel = "google/gemini-flash-1.5"; // Or get from config if possible
+
             let currentIteration = 0;
             let isRunning = false;
 
@@ -240,13 +280,13 @@ async def root_endpoint():
                 document.getElementById('results').innerHTML = '<p>Setting research goal...</p>';
                 document.getElementById('errors').innerHTML = '';
                 currentIteration = 0;
-                console.log("Submitting research goal:", researchGoal);
+                    console.log("Submitting research goal:", researchGoal);
 
-                // Read advanced settings
+                // Read advanced settings (read from select for llm_model)
                 const settings = {
                     description: researchGoal,
                     constraints: {}, // Add constraints input if needed later
-                    llm_model: document.getElementById('llm_model').value || null,
+                    llm_model: document.getElementById('llm_model').value || null, // Read from select
                     num_hypotheses: parseInt(document.getElementById('num_hypotheses').value) || null,
                     generation_temperature: parseFloat(document.getElementById('generation_temperature').value) || null,
                     reflection_temperature: parseFloat(document.getElementById('reflection_temperature').value) || null,
@@ -403,6 +443,40 @@ async def root_endpoint():
                 }
             }
 
+            // Function to populate the model dropdown
+            function populateModelDropdown() {
+                const selectElement = document.getElementById('llm_model');
+                if (!selectElement) return;
+
+                // Clear existing options except the placeholder
+                selectElement.innerHTML = '<option value="">-- Select Model --</option>';
+
+                if (availableModels && availableModels.length > 0) {
+                    availableModels.forEach(modelId => {
+                        const option = document.createElement('option');
+                        option.value = modelId;
+                        option.textContent = modelId;
+                        // Try to pre-select the default model
+                        if (modelId === defaultModel) {
+                            option.selected = true;
+                        }
+                        selectElement.appendChild(option);
+                    });
+                } else {
+                    // Optionally add a default or indicate loading failed
+                     const option = document.createElement('option');
+                     option.value = defaultModel; // Fallback to a known default
+                     option.textContent = defaultModel + " (Default - List unavailable)";
+                     option.selected = true;
+                     selectElement.appendChild(option);
+                     console.warn("Available models list is empty, using default.");
+                }
+            }
+
+            // Populate dropdown when the page loads
+            document.addEventListener('DOMContentLoaded', populateModelDropdown);
+
+
             function initializeGraph(nodesStr, edgesStr) {
                 if (typeof vis === 'undefined') {
                     console.error("Vis.js library not loaded!");
@@ -447,4 +521,5 @@ async def root_endpoint():
         </script>
     </body>
     </html>
-    """)
+    """
+    return responses.HTMLResponse(content=html_content)

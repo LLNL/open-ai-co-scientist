@@ -3,3 +3,4 @@ fastapi
 uvicorn
 pydantic
 PyYAML
+requests # Added for fetching models
