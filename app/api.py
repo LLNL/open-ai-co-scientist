@@ -45,9 +45,20 @@ def set_research_goal(goal: ResearchGoalRequest):
     logger.info("--- Endpoint /research_goal START ---")
     logger.info(f"Received new research goal description: {goal.description}")
     logger.info(f"Received constraints: {goal.constraints}")
+    logger.info(f"Received advanced settings: llm_model={goal.llm_model}, num_hypotheses={goal.num_hypotheses}, etc.") # Log received settings
     try:
-        current_research_goal = ResearchGoal(goal.description, goal.constraints)
-        logger.info("ResearchGoal object created.")
+        # Pass all settings from the request to the ResearchGoal constructor
+        current_research_goal = ResearchGoal(
+            description=goal.description,
+            constraints=goal.constraints,
+            llm_model=goal.llm_model,
+            num_hypotheses=goal.num_hypotheses,
+            generation_temperature=goal.generation_temperature,
+            reflection_temperature=goal.reflection_temperature,
+            elo_k_factor=goal.elo_k_factor,
+            top_k_hypotheses=goal.top_k_hypotheses
+        )
+        logger.info(f"ResearchGoal object created with effective settings: model={current_research_goal.llm_model}, num={current_research_goal.num_hypotheses}, gen_temp={current_research_goal.generation_temperature}, etc.") # Log effective settings
         global_context = ContextMemory()
         logger.info("Global context reset successfully.")
     except Exception as e:
@@ -161,6 +172,32 @@ async def root_endpoint():
 
         <label for="researchGoal">Research Goal:</label><br>
         <textarea id="researchGoal" name="researchGoal" rows="4" cols="50"></textarea><br><br>
+
+        <details style="margin-top: 15px; margin-bottom: 15px; border: 1px solid #eee; padding: 10px; border-radius: 5px;">
+            <summary style="cursor: pointer; font-weight: bold;">Advanced Settings</summary>
+            <div style="margin-top: 10px;">
+                <label for="llm_model">LLM Model:</label><br>
+                <input type="text" id="llm_model" name="llm_model" placeholder="e.g., google/gemini-flash-1.5" style="width: 90%; margin-bottom: 10px;"><br>
+
+                <label for="num_hypotheses">Number of Hypotheses per Cycle:</label>
+                <input type="number" id="num_hypotheses" name="num_hypotheses" min="1" max="10" placeholder="3" style="width: 50px; margin-bottom: 10px;"><br>
+
+                <label for="generation_temperature">Generation Temperature (Creativity):</label>
+                <input type="range" id="generation_temperature" name="generation_temperature" min="0.1" max="1.0" step="0.1" value="0.7" style="width: 90%; margin-bottom: 5px;" oninput="this.nextElementSibling.value = this.value">
+                <output>0.7</output><br>
+
+                <label for="reflection_temperature">Reflection Temperature (Analysis):</label>
+                <input type="range" id="reflection_temperature" name="reflection_temperature" min="0.1" max="1.0" step="0.1" value="0.5" style="width: 90%; margin-bottom: 5px;" oninput="this.nextElementSibling.value = this.value">
+                <output>0.5</output><br>
+
+                <label for="elo_k_factor">Elo K-Factor (Ranking Sensitivity):</label>
+                <input type="number" id="elo_k_factor" name="elo_k_factor" min="1" max="100" placeholder="32" style="width: 50px; margin-bottom: 10px;"><br>
+
+                <label for="top_k_hypotheses">Top K for Evolution:</label>
+                <input type="number" id="top_k_hypotheses" name="top_k_hypotheses" min="2" max="5" placeholder="2" style="width: 50px; margin-bottom: 10px;"><br>
+            </div>
+        </details>
+
         <button onclick="submitResearchGoal()">Submit Research Goal</button>
         <button onclick="runCycle()">Run Next Cycle</button> <!-- Added manual run button -->
 
@@ -205,13 +242,32 @@ async def root_endpoint():
                 currentIteration = 0;
                 console.log("Submitting research goal:", researchGoal);
 
+                // Read advanced settings
+                const settings = {
+                    description: researchGoal,
+                    constraints: {}, // Add constraints input if needed later
+                    llm_model: document.getElementById('llm_model').value || null,
+                    num_hypotheses: parseInt(document.getElementById('num_hypotheses').value) || null,
+                    generation_temperature: parseFloat(document.getElementById('generation_temperature').value) || null,
+                    reflection_temperature: parseFloat(document.getElementById('reflection_temperature').value) || null,
+                    elo_k_factor: parseInt(document.getElementById('elo_k_factor').value) || null,
+                    top_k_hypotheses: parseInt(document.getElementById('top_k_hypotheses').value) || null,
+                };
+                // Remove null values so backend uses defaults from ResearchGoal class
+                Object.keys(settings).forEach(key => (settings[key] == null || settings[key] === '' || isNaN(settings[key])) && delete settings[key]);
+                // Ensure description is always present
+                settings.description = researchGoal;
+
+                console.log("Submitting with settings:", settings);
+
+
                 try {
                     isRunning = true;
                     console.log("Fetching /research_goal...");
                     const response = await fetch('/research_goal', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ description: researchGoal })
+                        body: JSON.stringify(settings) // Send all settings
                     });
                     console.log("Response status from /research_goal:", response.status);
 

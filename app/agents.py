@@ -18,10 +18,12 @@ from .config import config
 
 def call_llm_for_generation(prompt: str, num_hypotheses: int = 3) -> List[Dict]:
     """Calls LLM for generating hypotheses, handling JSON parsing."""
+    # Temperature is now passed in
     logger.info("LLM generation called with prompt: %s, num_hypotheses: %d", prompt, num_hypotheses)
     full_prompt = prompt + "\n\nPlease return the response as a JSON array of objects, where each object has a 'title' and 'text' key."
 
-    response = call_llm(full_prompt, temperature=config.get("step_temperatures", {}).get("generation", 0.7))
+    # Use temperature passed as argument
+    response = call_llm(full_prompt, temperature=temperature)
     logger.info("LLM generation response: %s", response)
 
     if response.startswith("Error:"):
@@ -55,7 +57,8 @@ def call_llm_for_reflection(hypothesis_text: str) -> Dict:
         f"Hypothesis: {hypothesis_text}\n\n"
         f"Return the response as a JSON object with the following keys: 'novelty_review', 'feasibility_review', 'comment', 'references'."
     )
-    response = call_llm(prompt, temperature=config.get("step_temperatures", {}).get("reflection", 0.5)) # Example: different temp
+    # Use temperature passed as argument
+    response = call_llm(prompt, temperature=temperature)
     logger.info("LLM reflection response for hypothesis: %s", response)
 
     if response.startswith("Error:"):
@@ -132,9 +135,9 @@ def run_pairwise_debate(hypoA: Hypothesis, hypoB: Hypothesis) -> Hypothesis:
                 hypoA.hypothesis_id, scoreA, hypoB.hypothesis_id, scoreB, winner.hypothesis_id)
     return winner
 
-def update_elo(winner: Hypothesis, loser: Hypothesis):
-    """Updates Elo scores after a comparison."""
-    k_factor = config.get("elo_k_factor", 32)
+def update_elo(winner: Hypothesis, loser: Hypothesis, k_factor: int):
+    """Updates Elo scores after a comparison, using provided k_factor."""
+    # k_factor is now passed as an argument
     ratingA = winner.elo_score
     ratingB = loser.elo_score
     expectedA = 1 / (1 + math.pow(10, (ratingB - ratingA) / 400))
@@ -164,15 +167,20 @@ def combine_hypotheses(hypoA: Hypothesis, hypoB: Hypothesis) -> Hypothesis:
 
 class GenerationAgent:
     def generate_new_hypotheses(self, research_goal: ResearchGoal, context: ContextMemory) -> List[Hypothesis]:
-        """Generates new hypotheses using LLM."""
-        num_to_generate = config.get("num_hypotheses", 3)
+        """Generates new hypotheses using LLM, based on research_goal settings."""
+        # Use settings from research_goal object
+        num_to_generate = research_goal.num_hypotheses
+        gen_temp = research_goal.generation_temperature
+        llm_model_to_use = research_goal.llm_model # Ensure call_llm uses this if needed, or pass it
+
         prompt = (
             f"Research Goal: {research_goal.description}\n"
             f"Constraints: {research_goal.constraints}\n"
             f"Existing Hypothesis IDs: {list(context.hypotheses.keys())}\n" # Provide context
             f"Please propose {num_to_generate} novel and feasible hypotheses with rationale, avoiding duplication with existing IDs.\n"
         )
-        raw_output = call_llm_for_generation(prompt, num_hypotheses=num_to_generate)
+        # Pass the specific temperature and num_hypotheses
+        raw_output = call_llm_for_generation(prompt, num_hypotheses=num_to_generate, temperature=gen_temp)
         new_hypos = []
         for idea in raw_output:
              # Check for error response from LLM call
@@ -190,13 +198,18 @@ class GenerationAgent:
         return new_hypos
 
 class ReflectionAgent:
-    def review_hypotheses(self, hypotheses: List[Hypothesis], context: ContextMemory) -> None:
-        """Reviews hypotheses using LLM."""
+    def review_hypotheses(self, hypotheses: List[Hypothesis], context: ContextMemory, research_goal: ResearchGoal) -> None:
+        """Reviews hypotheses using LLM, based on research_goal settings."""
+        # Use reflection temperature from research_goal
+        reflect_temp = research_goal.reflection_temperature
+        llm_model_to_use = research_goal.llm_model # Ensure call_llm uses this if needed, or pass it
+
         for h in hypotheses:
             # Avoid re-reviewing if already reviewed (optional optimization)
             # if h.novelty_review is not None and h.feasibility_review is not None:
             #    continue
-            result = call_llm_for_reflection(h.text)
+            # Pass the specific temperature
+            result = call_llm_for_reflection(h.text, temperature=reflect_temp)
             h.novelty_review = result["novelty_review"]
             h.feasibility_review = result["feasibility_review"]
             # Append comment only if it's not the default error message
@@ -208,8 +221,11 @@ class ReflectionAgent:
             logger.info("Reviewed hypothesis: %s, Novelty: %s, Feasibility: %s", h.hypothesis_id, h.novelty_review, h.feasibility_review)
 
 class RankingAgent:
-    def run_tournament(self, hypotheses: List[Hypothesis], context: ContextMemory) -> None:
-        """Runs a pairwise tournament to rank hypotheses."""
+    def run_tournament(self, hypotheses: List[Hypothesis], context: ContextMemory, research_goal: ResearchGoal) -> None:
+        """Runs a pairwise tournament to rank hypotheses, using research_goal settings."""
+        # Use k_factor from research_goal
+        k_factor = research_goal.elo_k_factor
+
         if len(hypotheses) < 2:
             logger.info("Not enough hypotheses to run a tournament.")
             return
@@ -231,7 +247,8 @@ class RankingAgent:
         for hA, hB in pairs:
             winner = run_pairwise_debate(hA, hB)
             loser = hB if winner == hA else hA
-            update_elo(winner, loser)
+            # Pass the specific k_factor
+            update_elo(winner, loser, k_factor=k_factor)
             # Record result in context (consider if this needs iteration info)
             context.tournament_results.append({
                 "iteration": context.iteration_number, # Add iteration number
@@ -242,9 +259,10 @@ class RankingAgent:
             })
 
 class EvolutionAgent:
-    def evolve_hypotheses(self, context: ContextMemory) -> List[Hypothesis]:
-        """Evolves hypotheses by combining top candidates."""
-        top_k = config.get("top_k_hypotheses", 2)
+    def evolve_hypotheses(self, context: ContextMemory, research_goal: ResearchGoal) -> List[Hypothesis]:
+        """Evolves hypotheses by combining top candidates, using research_goal settings."""
+        # Use top_k from research_goal
+        top_k = research_goal.top_k_hypotheses
         active = context.get_active_hypotheses()
         if len(active) < 2:
             logger.info("Not enough active hypotheses to perform evolution.")
@@ -367,31 +385,28 @@ class SupervisorAgent:
 
         # 2. Reflection
         logger.info("Step 2: Reflection")
-        self.reflection_agent.review_hypotheses(active_hypos, context) # Review all active hypotheses
-        cycle_details["steps"]["reflection"] = {"hypotheses": [h.to_dict() for h in active_hypos]} # Log state after review
+        self.reflection_agent.review_hypotheses(active_hypos, context, research_goal) # Pass research_goal
+        cycle_details["steps"]["reflection"] = {"hypotheses": [h.to_dict() for h in active_hypos]}
 
         # 3. Ranking (Tournament 1)
         logger.info("Step 3: Ranking 1")
-        self.ranking_agent.run_tournament(active_hypos, context)
-        # Log state after ranking (Elo scores updated)
+        self.ranking_agent.run_tournament(active_hypos, context, research_goal) # Pass research_goal
         cycle_details["steps"]["ranking1"] = {"hypotheses": [h.to_dict() for h in active_hypos]}
 
         # 4. Evolution
         logger.info("Step 4: Evolution")
-        evolved_hypotheses = self.evolution_agent.evolve_hypotheses(context)
+        evolved_hypotheses = self.evolution_agent.evolve_hypotheses(context, research_goal) # Pass research_goal
         if evolved_hypotheses:
             for eh in evolved_hypotheses:
                 context.add_hypothesis(eh)
-            # 4a. Review newly evolved hypotheses immediately
             logger.info("Step 4a: Reviewing Evolved Hypotheses")
-            self.reflection_agent.review_hypotheses(evolved_hypotheses, context)
-            # Update active list for next steps
-            active_hypos = context.get_active_hypotheses()
+            self.reflection_agent.review_hypotheses(evolved_hypotheses, context, research_goal) # Pass research_goal
+            active_hypos = context.get_active_hypotheses() # Update active list
         cycle_details["steps"]["evolution"] = {"hypotheses": [h.to_dict() for h in evolved_hypotheses]}
 
         # 5. Ranking (Tournament 2 - includes evolved)
         logger.info("Step 5: Ranking 2")
-        self.ranking_agent.run_tournament(active_hypos, context)
+        self.ranking_agent.run_tournament(active_hypos, context, research_goal) # Pass research_goal
         cycle_details["steps"]["ranking2"] = {"hypotheses": [h.to_dict() for h in active_hypos]}
 
         # 6. Proximity Analysis
