@@ -39,10 +39,29 @@ class Hypothesis:
             "parent_ids": self.parent_ids,  # Include parent IDs
         }
 
+# Import config to access defaults easily
+from .config import config
+
 class ResearchGoal:
-    def __init__(self, description: str, constraints: Dict = None):
+    def __init__(self,
+                 description: str,
+                 constraints: Optional[Dict] = None,
+                 llm_model: Optional[str] = None,
+                 num_hypotheses: Optional[int] = None,
+                 generation_temperature: Optional[float] = None,
+                 reflection_temperature: Optional[float] = None,
+                 elo_k_factor: Optional[int] = None,
+                 top_k_hypotheses: Optional[int] = None):
         self.description = description
         self.constraints = constraints if constraints else {}
+        # Store runtime settings, falling back to config defaults if not provided
+        self.llm_model = llm_model if llm_model else config.get('llm_model', 'google/gemini-flash-1.5') # Example default
+        self.num_hypotheses = num_hypotheses if num_hypotheses is not None else config.get('num_hypotheses', 3)
+        self.generation_temperature = generation_temperature if generation_temperature is not None else config.get('step_temperatures', {}).get('generation', 0.7)
+        self.reflection_temperature = reflection_temperature if reflection_temperature is not None else config.get('step_temperatures', {}).get('reflection', 0.5)
+        self.elo_k_factor = elo_k_factor if elo_k_factor is not None else config.get('elo_k_factor', 32)
+        self.top_k_hypotheses = top_k_hypotheses if top_k_hypotheses is not None else config.get('top_k_hypotheses', 2)
+
 
 class ContextMemory:
     """
@@ -70,6 +89,14 @@ class ContextMemory:
 class ResearchGoalRequest(BaseModel):
     description: str
     constraints: Optional[Dict] = {}
+    # Add optional fields for advanced settings
+    llm_model: Optional[str] = None
+    num_hypotheses: Optional[int] = None
+    generation_temperature: Optional[float] = None
+    reflection_temperature: Optional[float] = None
+    elo_k_factor: Optional[int] = None
+    top_k_hypotheses: Optional[int] = None
+
 
 class HypothesisResponse(BaseModel):
     id: str
