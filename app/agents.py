@@ -49,8 +49,10 @@ def call_llm_for_generation(prompt: str, num_hypotheses: int = 3, temperature: f
         logger.error("Could not parse LLM generation response as JSON: %s", response, exc_info=True)
         return [{"title": "Error", "text": f"Could not parse LLM response: {e}"}]
 
-def call_llm_for_reflection(hypothesis_text: str) -> Dict:
+# Updated signature to accept temperature
+def call_llm_for_reflection(hypothesis_text: str, temperature: float = 0.5) -> Dict:
     """Calls LLM for reviewing a hypothesis, handling JSON parsing."""
+    logger.info("LLM reflection called with temperature: %.2f", temperature)
     prompt = (
         f"Review the following hypothesis and provide a novelty assessment (HIGH, MEDIUM, or LOW), "
         f"a feasibility assessment (HIGH, MEDIUM, or LOW), a comment, and a list of references (PMIDs) in JSON format:\n\n"
