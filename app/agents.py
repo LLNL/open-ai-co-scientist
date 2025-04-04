@@ -16,13 +16,13 @@ from .config import config
 
 # --- Agent-Specific LLM Calls (Moved from main.py/utils.py for better cohesion) ---
 
-def call_llm_for_generation(prompt: str, num_hypotheses: int = 3) -> List[Dict]:
+# Updated signature to accept temperature
+def call_llm_for_generation(prompt: str, num_hypotheses: int = 3, temperature: float = 0.7) -> List[Dict]:
     """Calls LLM for generating hypotheses, handling JSON parsing."""
-    # Temperature is now passed in
-    logger.info("LLM generation called with prompt: %s, num_hypotheses: %d", prompt, num_hypotheses)
+    logger.info("LLM generation called with prompt: %s, num_hypotheses: %d, temperature: %.2f", prompt, num_hypotheses, temperature)
     full_prompt = prompt + "\n\nPlease return the response as a JSON array of objects, where each object has a 'title' and 'text' key."
 
-    # Use temperature passed as argument
+    # Pass the received temperature down to the actual LLM call
     response = call_llm(full_prompt, temperature=temperature)
     logger.info("LLM generation response: %s", response)
 
@@ -57,7 +57,7 @@ def call_llm_for_reflection(hypothesis_text: str) -> Dict:
         f"Hypothesis: {hypothesis_text}\n\n"
         f"Return the response as a JSON object with the following keys: 'novelty_review', 'feasibility_review', 'comment', 'references'."
     )
-    # Use temperature passed as argument
+    # Pass the received temperature down to the actual LLM call
     response = call_llm(prompt, temperature=temperature)
     logger.info("LLM reflection response for hypothesis: %s", response)
 
