@@ -17,7 +17,7 @@ from .utils import logger # Use the configured logger
 # FastAPI Application Setup
 ###############################################################################
 
-app = FastAPI(title="AI Co-Scientist System", version="1.0")
+app = FastAPI(title="AI Co-Scientist - Hypothesis Evolution System", version="1.0")
 
 # --- Global State (Consider alternatives for production) ---
 # These globals make the app stateful, which can be problematic for scaling.
