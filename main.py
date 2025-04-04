@@ -839,7 +839,7 @@ class SupervisorAgent:
         }
 
         # 7. Meta-review
-        overview = self.meta_review_agent.summarize_and_feedback(context, adjacency_result["adjacency_graph"])
+        overview = self.meta_review_agent.summarize_and_feedback(context, proximity_result["adjacency_graph"])
         cycle_details["meta_review"] = overview
         context.iteration_number += 1
 
