@@ -4,3 +4,7 @@ uvicorn
 pydantic
 PyYAML
 requests # Added for fetching models
+sentence-transformers
+scikit-learn
+torch # Or tensorflow - required by sentence-transformers
+numpy # Often a dependency of the above, good to list explicitly
