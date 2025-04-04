@@ -133,9 +133,10 @@ async def root_endpoint():
             <em>Instructions:</em> Enter a research goal and click "Submit Research Goal" to start a new process.
             Click "Run Next Cycle" to perform another iteration on the current set of hypotheses.
         </p>
+        <p id="initial-prompt" style="color: #555;">Submit a research goal to begin.</p>
 
         <h2>Results</h2>
-        <div id="results"><p>Submit a research goal to begin.</p></div>
+        <div id="results"></div> <!-- Removed initial text -->
 
         <h2>Errors</h2>
         <div id="errors"></div>
@@ -161,6 +162,9 @@ async def root_endpoint():
                     document.getElementById('errors').innerHTML = '<p>Please enter a research goal.</p>';
                     return;
                 }
+                // Clear initial prompt and show status
+                const initialPrompt = document.getElementById('initial-prompt');
+                if (initialPrompt) initialPrompt.style.display = 'none';
                 document.getElementById('results').innerHTML = '<p>Setting research goal...</p>';
                 document.getElementById('errors').innerHTML = '';
                 currentIteration = 0;
@@ -193,7 +197,10 @@ async def root_endpoint():
                 } catch (error) {
                     console.error('Error in submitResearchGoal:', error);
                     document.getElementById('errors').innerHTML = '<p>Error setting goal: ' + escapeHTML(error.message) + '</p>';
-                    document.getElementById('results').innerHTML = '';
+                    document.getElementById('results').innerHTML = ''; // Clear results on error
+                    // Restore initial prompt on error if needed
+                    // const initialPrompt = document.getElementById('initial-prompt');
+                    // if (initialPrompt) initialPrompt.style.display = 'block';
                 } finally {
                     isRunning = false;
                     console.log("submitResearchGoal: isRunning set to false.");
@@ -208,6 +215,10 @@ async def root_endpoint():
                 console.log(`Attempting to run cycle ${currentIteration + 1}`);
                 document.getElementById('errors').innerHTML = '';
                 const resultsDiv = document.getElementById('results');
+                // Clear initial prompt if it's still visible
+                const initialPrompt = document.getElementById('initial-prompt');
+                if (initialPrompt) initialPrompt.style.display = 'none';
+                // Add status message
                 const statusDiv = document.createElement('p');
                 statusDiv.id = `cycle-status-${currentIteration + 1}`;
                 statusDiv.textContent = `Running cycle ${currentIteration + 1}...`;
