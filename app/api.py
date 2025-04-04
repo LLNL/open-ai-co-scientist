@@ -42,9 +42,8 @@ async def fetch_available_models():
         # For now, just get all IDs
         available_models = sorted([model.get("id") for model in models_data if model.get("id")])
         logger.info(f"Successfully fetched {len(available_models)} models.")
-        # Example: Log first few models
-        if available_models:
-            logger.info(f"Example models: {available_models[:5]}")
+        # Log the actual list for confirmation
+        logger.info(f"Available models list (first 10): {available_models[:10]}")
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to fetch models from OpenRouter: {e}")
         available_models = [] # Ensure it's an empty list on failure
@@ -167,9 +166,11 @@ async def root_endpoint():
     # Pass the models list to the template (will be used by JS)
     # Need json import here
     import json
-    models_json = json.dumps(available_models)
+    # Ensure models_json is treated as a raw string suitable for JS assignment
+    models_json_string = json.dumps(available_models)
 
     # Use regular string concatenation or triple quotes, NOT f-string for the large HTML block
+    # Add a placeholder like ###MODELS_JSON### where the data should go
     html_content = """
     <!DOCTYPE html>
     <html>
@@ -250,9 +251,10 @@ async def root_endpoint():
         <div id="errors"></div>
 
         <script>
-            // Inject the models list from the backend
-            const availableModels = {models_json};
+            // Inject the models list from the backend - Placeholder will be replaced
+            const availableModels = ###MODELS_JSON###;
             const defaultModel = "google/gemini-flash-1.5"; // Or get from config if possible
+            console.log("Available models received from backend:", availableModels); // Log received models
 
             let currentIteration = 0;
             let isRunning = false;
@@ -445,14 +447,21 @@ async def root_endpoint():
 
             // Function to populate the model dropdown
             function populateModelDropdown() {
+                console.log("Populating model dropdown..."); // Log function start
                 const selectElement = document.getElementById('llm_model');
-                if (!selectElement) return;
+                if (!selectElement) {
+                    console.error("LLM model select element not found!");
+                    return;
+                }
 
                 // Clear existing options except the placeholder
                 selectElement.innerHTML = '<option value="">-- Select Model --</option>';
 
-                if (availableModels && availableModels.length > 0) {
+                console.log("Type of availableModels:", typeof availableModels, "Is Array:", Array.isArray(availableModels), "Length:", availableModels ? availableModels.length : 'N/A');
+
+                if (availableModels && Array.isArray(availableModels) && availableModels.length > 0) {
                     availableModels.forEach(modelId => {
+                        console.log("Adding model to dropdown:", modelId); // Log each model
                         const option = document.createElement('option');
                         option.value = modelId;
                         option.textContent = modelId;
@@ -522,4 +531,6 @@ async def root_endpoint():
     </body>
     </html>
     """
+    # Replace the placeholder with the actual JSON string before returning
+    html_content = html_content.replace("###MODELS_JSON###", models_json_string)
     return responses.HTMLResponse(content=html_content)
