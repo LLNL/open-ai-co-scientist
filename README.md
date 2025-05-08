@@ -4,6 +4,9 @@ This project implements an AI-powered system for generating, reviewing, ranking,
 
 https://storage.googleapis.com/coscientist_paper/ai_coscientist.pdf
 
+Documentation, Diagrams and Question-Answering of this project using DeepWiki
+* https://deepwiki.com/chunhualiao/ai-co-scientist 
+
 ## Overview
 
 This project implements a multi-agent system within the `app` package that iteratively generates and refines research hypotheses. The code is organized into modules:
