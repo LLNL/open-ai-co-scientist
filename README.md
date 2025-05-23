@@ -53,17 +53,23 @@ This project implements a multi-agent system within the `app` package that itera
 
 ## User Instructions
 
-1.  **Install Dependencies:**
+1.  **Set up a virtual environment (recommended):**
+    It is recommended to create and activate a Python virtual environment before installing dependencies to avoid conflicts with other packages on your system. For example:
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate
+    ```
+2.  **Install Dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
     (This includes `fastapi`, `uvicorn`, `openai`, `requests`, `sentence-transformers`, `scikit-learn`, `torch`, `numpy`, `PyYAML`).
-2.  **Set Environment Variable:**
+3.  **Set Environment Variable:**
     Obtain an API key from OpenRouter ([https://openrouter.ai/](https://openrouter.ai/)) and set it as an environment variable:
     ```bash
     export OPENROUTER_API_KEY=your_api_key
     ```
-3.  **Run the Application:**
+4.  **Run the Application:**
     ```bash
     # Use the Makefile (default target runs uvicorn)
     make run
@@ -71,13 +77,13 @@ This project implements a multi-agent system within the `app` package that itera
     (Alternatively, for development with auto-reload: `make run-reload`)
     
     (This uses the command `uvicorn app.api:app --host 0.0.0.0 --port 8000` internally.)
-4.  **Access the Web Interface:**
+5.  **Access the Web Interface:**
     Open a web browser and go to `http://localhost:8000`. (Note: The server log may show `http://0.0.0.0:8000`, which means the server is listening on all network interfaces. However, you should use `localhost` in your browser to access the server from your local machine. You cannot directly type `0.0.0.0` into your browser's address bar.)
-5.  **Enter Research Goal:**
+6.  **Enter Research Goal:**
     Enter your research goal in the text area provided. Optionally, expand "Advanced Settings" to customize the LLM model, temperatures, and other parameters.
-6.  **Submit and Run:**
+7.  **Submit and Run:**
     Click the "Submit Research Goal" button. This sets the goal and parameters, resets the context, configures logging for the run, and automatically triggers the first cycle.
-7.  **Iterate:**
+8.  **Iterate:**
     Click the "Run Next Cycle" button to perform subsequent refinement cycles on the current set of hypotheses using the same settings. Results are updated on the page after each cycle.
 
 ## Expected Results
