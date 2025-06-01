@@ -1,4 +1,10 @@
-# Configuration file for proposal-gen-v1.py
+# AI Co-Scientist Configuration
+# Main configuration file for the AI Co-Scientist system
+
+# Database Configuration
+database:
+  path: "data/ai_coscientist.db"
+  auto_migrate: true
 
 # OpenAI API Key (REQUIRED)
 # Obtain an API key from OpenRouter (https://openrouter.ai) and set it as an environment variable:
@@ -13,7 +19,7 @@ openrouter_base_url: "https://openrouter.ai/api/v1"
 llm_model: "google/gemini-2.0-flash-001"
 
 # Number of hypotheses to generate
-num_hypotheses: 6
+num_hypotheses: 3
 
 # Elo K-factor
 elo_k_factor: 32
@@ -25,7 +31,7 @@ top_k_hypotheses: 2
 logging_level: "INFO"
 
 # Base log file name (without extension)
-log_file_name: "app"
+log_file_name: "app_log"
 
 # FastAPI host
 fastapi_host: "0.0.0.0"
@@ -37,3 +43,14 @@ fastapi_port: 8000
 step_temperatures:
   generation: 0.7
   reflection: 0.5
+
+# ArXiv Search Configuration
+arxiv:
+  default_max_results: 10
+  timeout: 30
+  user_agent: "AI-CoScientist/1.0"
+
+# System Settings
+similarity_threshold: 0.1
+max_active_hypotheses: 100
+enable_persistence: true

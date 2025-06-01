@@ -8,15 +8,22 @@ import re
 logger = logging.getLogger(__name__)
 
 class ArxivSearchTool:
-    """Tool for searching and retrieving papers from arXiv"""
+    """Tool for searching and retrieving papers from arXiv with database tracking"""
     
-    def __init__(self, max_results: int = 10):
+    def __init__(self, max_results: int = 10, session_id: str = None):
         self.max_results = max_results
         self.client = arxiv.Client()
+        self.session_id = session_id
+        self.db_manager = None
+        
+        # Initialize database manager if session_id provided
+        if session_id:
+            from ..database import get_db_manager
+            self.db_manager = get_db_manager()
         
     def search_papers(self, query: str, max_results: Optional[int] = None, 
                      categories: Optional[List[str]] = None,
-                     sort_by: str = "relevance") -> List[Dict]:
+                     sort_by: str = "relevance", search_type: str = "manual") -> List[Dict]:
         """
         Search arXiv for papers matching query
         
@@ -72,6 +79,27 @@ class ArxivSearchTool:
             logger.info(f"ArXiv search completed - Found {len(papers)} papers for query: '{query}' "
                        f"in {search_time:.2f}ms")
             
+            # Save search to database if enabled
+            if self.db_manager and self.session_id:
+                search_params = {
+                    'max_results': max_results,
+                    'categories': categories or [],
+                    'sort_by': sort_by
+                }
+                search_id = self.db_manager.save_arxiv_search(
+                    session_id=self.session_id,
+                    query=query,
+                    search_type=search_type,
+                    search_params=search_params,
+                    results_count=len(papers),
+                    search_time_ms=search_time
+                )
+                
+                # Save search results
+                if papers:
+                    self.db_manager.save_arxiv_search_results(search_id, papers)
+                    logger.debug(f"Saved arXiv search to database: search_id={search_id}")
+            
             # Log paper details at debug level
             if papers and logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"ArXiv papers found:")
@@ -95,6 +123,12 @@ class ArxivSearchTool:
         except Exception as e:
             logger.error(f"ArXiv search failed for query '{query}': {e}", exc_info=True)
             return []
+    
+    def search(self, query: str, max_results: Optional[int] = None, 
+               categories: Optional[List[str]] = None,
+               sort_by: str = "relevance", search_type: str = "manual") -> List[Dict]:
+        """Alias for search_papers method for backward compatibility"""
+        return self.search_papers(query, max_results, categories, sort_by, search_type)
     
     def search_by_author(self, author_name: str, max_results: Optional[int] = None) -> List[Dict]:
         """Search for papers by a specific author"""
@@ -140,6 +174,12 @@ class ArxivSearchTool:
             if papers:
                 paper = self._format_paper(papers[0])
                 logger.info(f"Successfully retrieved paper '{paper['title']}' ({arxiv_id}) in {fetch_time:.2f}ms")
+                
+                # Save paper access to database if enabled
+                if self.db_manager:
+                    self.db_manager.save_arxiv_paper(paper)
+                    logger.debug(f"Saved paper access to database: {arxiv_id}")
+                
                 return paper
             else:
                 logger.warning(f"No paper found with arXiv ID: {arxiv_id}")

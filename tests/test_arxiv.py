@@ -8,9 +8,9 @@ import sys
 import os
 
 # Add the app directory to Python path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'app'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
 
-from app.tools.arxiv_search import ArxivSearchTool, get_categories_for_field
+from tools.arxiv_search import ArxivSearchTool, get_categories_for_field
 
 def test_basic_search():
     """Test basic arXiv search functionality"""

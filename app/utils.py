@@ -29,10 +29,14 @@ logger = logging.getLogger("aicoscientist") # Use a specific name for the app lo
 # logger.addHandler(file_handler)
 
 # --- LLM Interaction ---
-def call_llm(prompt: str, temperature: float = 0.7) -> str:
+def call_llm(prompt: str, temperature: float = 0.7, call_type: str = "unknown", 
+            session_id: str = None, hypothesis_id: str = None) -> str:
     """
-    Calls an LLM via the OpenRouter API and returns the response. Handles retries.
+    Calls an LLM via the OpenRouter API and returns the response. Handles retries and logs performance.
     """
+    import time
+    start_time = time.time()
+    
     client = OpenAI(
         base_url=config.get("openrouter_base_url"),
         api_key=os.getenv("OPENROUTER_API_KEY"),
@@ -48,7 +52,16 @@ def call_llm(prompt: str, temperature: float = 0.7) -> str:
         logger.error("OPENROUTER_API_KEY environment variable not set.")
         return "Error: OpenRouter API key not set."
 
-    last_error_message = "API call failed after multiple retries." # Default error
+    last_error_message = "API call failed after multiple retries."
+    response_content = None
+    success = False
+    total_retry_count = 0
+    rate_limited = False
+    
+    # Token tracking
+    prompt_tokens = None
+    completion_tokens = None
+    openrouter_request_id = None
 
     for attempt in range(max_retries):
         try:
@@ -57,16 +70,34 @@ def call_llm(prompt: str, temperature: float = 0.7) -> str:
                 messages=[{"role": "user", "content": prompt}],
                 temperature=temperature,
             )
+            
+            # Extract response and usage information
             if completion.choices and len(completion.choices) > 0:
-                return completion.choices[0].message.content or "" # Return empty string if content is None
+                response_content = completion.choices[0].message.content or ""
+                success = True
+                
+                # Extract token usage if available
+                if hasattr(completion, 'usage') and completion.usage:
+                    prompt_tokens = completion.usage.prompt_tokens
+                    completion_tokens = completion.usage.completion_tokens
+                
+                # Extract OpenRouter-specific metadata
+                if hasattr(completion, 'id'):
+                    openrouter_request_id = completion.id
+                
+                logger.debug(f"LLM call successful: {prompt_tokens} prompt tokens, "
+                           f"{completion_tokens} completion tokens")
+                break
             else:
                 logger.error("No choices in the LLM response: %s", completion)
                 last_error_message = f"No choices in the response: {completion}"
-                # Continue to retry if possible
 
         except Exception as e:
+            total_retry_count += 1
             error_str = str(e)
-            if "Rate limit exceeded" in error_str:
+            
+            if "Rate limit exceeded" in error_str or "rate_limit_exceeded" in error_str.lower():
+                rate_limited = True
                 logger.warning(f"Rate limit exceeded (attempt {attempt + 1}/{max_retries}): {e}")
                 last_error_message = f"Rate limit exceeded: {e}"
             else:
@@ -79,9 +110,52 @@ def call_llm(prompt: str, temperature: float = 0.7) -> str:
                 time.sleep(wait_time)
             else:
                 logger.error("Max retries reached. Giving up.")
-                break # Exit loop after last attempt
+                break
 
-    return f"Error: {last_error_message}" # Return the last recorded error
+    # Calculate response time
+    response_time_ms = (time.time() - start_time) * 1000
+    
+    # Log to database if session_id is provided
+    if session_id:
+        try:
+            from .database import get_db_manager
+            db_manager = get_db_manager()
+            
+            final_response = response_content if success else f"Error: {last_error_message}"
+            
+            db_manager.save_llm_call(
+                session_id=session_id,
+                call_type=call_type,
+                model_name=llm_model,
+                prompt=prompt,
+                response=final_response,
+                temperature=temperature,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                response_time_ms=response_time_ms,
+                success=success,
+                error_message=last_error_message if not success else None,
+                retry_count=total_retry_count,
+                hypothesis_id=hypothesis_id,
+                openrouter_model_id=llm_model,
+                openrouter_request_id=openrouter_request_id,
+                rate_limited=rate_limited
+            )
+            
+            logger.debug(f"LLM call logged to database: {call_type} call took {response_time_ms:.2f}ms")
+            
+        except Exception as db_error:
+            logger.warning(f"Failed to log LLM call to database: {db_error}")
+
+    # Log performance metrics for monitoring
+    logger.info(f"LLM call completed - Type: {call_type}, Model: {llm_model}, "
+               f"Success: {success}, Time: {response_time_ms:.2f}ms, "
+               f"Tokens: {prompt_tokens}/{completion_tokens}, Retries: {total_retry_count}")
+
+    if success:
+        return response_content
+    else:
+        return f"Error: {last_error_message}"
 
 
 # --- ID Generation ---

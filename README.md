@@ -155,11 +155,11 @@ The `config.yaml` file provides default settings for the system. Many of these c
 
 *   **`openrouter_base_url`**: Base URL for the OpenRouter API. Default: `"https://openrouter.ai/api/v1"`.
 *   **`llm_model`**: Default LLM model identifier used if not specified in the UI. Default: `"google/gemini-2.0-flash-001"`.
-*   **`num_hypotheses`**: Default number of hypotheses generated per cycle. Default: `6`.
+*   **`num_hypotheses`**: Default number of hypotheses generated per cycle. Default: `3`.
 *   **`elo_k_factor`**: Default K-factor for Elo rating updates (ranking sensitivity). Default: `32`.
 *   **`top_k_hypotheses`**: Default number of top hypotheses used for evolution. Default: `2`.
 *   **`logging_level`**: Controls logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`). Default: `"INFO"`.
-*   **`log_file_name`**: Base name for timestamped log files created in the `results/` directory. Default: `"app"`.
+*   **`log_file_name`**: Base name for timestamped log files created in the `results/` directory. Default: `"app_log"`.
 *   **`fastapi_host`**: Network interface for the server. Default: `"0.0.0.0"`.
 *   **`fastapi_port`**: Port for the server. Default: `8000`.
 *   **`step_temperatures`**: Contains temperature settings for different LLM calls:
@@ -167,12 +167,106 @@ The `config.yaml` file provides default settings for the system. Many of these c
     *   **`reflection`**: Controls analytical focus during hypothesis review. Default: `0.5`.
 *   **(Optional) `sentence_transformer_model`**: Specifies the model used for similarity scoring. If not present, defaults to `'all-MiniLM-L6-v2'` in `app/utils.py`. Example: `sentence_transformer_model: 'all-MiniLM-L6-v2'`
 
+### Advanced Settings Integration
+
+The Advanced Settings form in the web UI now dynamically reads default values from `config.yaml`, ensuring consistency between configuration and user interface:
+
+- **Dynamic Defaults**: All form fields (hypotheses count, temperatures, K-factor, etc.) display current config values as placeholders
+- **Model Selection**: The LLM model dropdown automatically pre-selects the model specified in config
+- **Runtime Override**: Users can still override any setting for individual research sessions
+- **Configuration Sync**: Changes to `config.yaml` are immediately reflected in the UI after restart
+
+### Logging Optimizations
+
+Recent improvements to logging significantly reduce log file size while maintaining essential information:
+
+- **Structured Logging**: Raw LLM responses and parsed JSON data moved to DEBUG level
+- **Concise Summaries**: INFO level shows response lengths, token counts, and success confirmations
+- **Individual Hypothesis Logging**: Full hypothesis objects moved to DEBUG; INFO shows only ID and title
+- **Performance Metrics**: LLM call timing, retry counts, and model information remain at INFO level
+- **Error Tracking**: All error conditions continue to be logged at appropriate levels
+
+To view detailed information, set `logging_level: "DEBUG"` in `config.yaml`.
+
+## Database Features
+
+The AI Co-Scientist system now includes comprehensive database tracking for all research activities:
+
+### Persistent Storage
+- **SQLite Database**: All sessions, hypotheses, and research data are now persisted in `data/ai_coscientist.db`
+- **Hybrid Memory**: The system maintains both in-memory performance and database persistence
+- **Data Migration**: Historical log files can be migrated to the database for analysis
+
+### ArXiv Paper Tracking
+- **Paper Metadata**: Automatically stores accessed arXiv papers with full metadata
+- **Search Analytics**: Tracks all arXiv searches, query performance, and result counts
+- **Usage Statistics**: Monitors which papers are accessed most frequently
+- **Paper-Hypothesis Links**: Records relationships between papers and generated hypotheses
+
+### LLM Call Monitoring
+- **Performance Metrics**: Tracks response times, token usage, and API costs for all LLM calls
+- **Error Analysis**: Monitors failed calls, retry counts, and rate limiting
+- **Cost Tracking**: Calculates API costs based on model pricing
+- **Call Context**: Links LLM calls to specific hypotheses and research sessions
+
+### Web Dashboard
+- **Research Sessions Browser**: View and filter all past research sessions at `/dashboard/sessions`
+- **Analytics Dashboard**: Comprehensive analytics at `/dashboard` with navigation cards
+- **Export Capabilities**: Export complete session data including all tracking information
+
+### API Endpoints
+- `GET /dashboard` - Main analytics dashboard
+- `GET /dashboard/sessions` - Sessions browser with filtering
+- `GET /api/sessions/{session_id}/arxiv-analytics` - ArXiv usage for session
+- `GET /api/sessions/{session_id}/llm-analytics` - LLM performance for session
+
+## Testing Database Features
+
+### 1. Test ArXiv Integration
+```bash
+# Test arXiv search functionality
+curl -X POST "http://localhost:8000/arxiv/search" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "machine learning", "max_results": 5}'
+
+# Test specific paper retrieval
+curl "http://localhost:8000/arxiv/paper/2301.12345"
+```
+
+### 2. Test Database Migration
+```bash
+# Migrate existing log files to database
+source venv/bin/activate
+python migrate_results.py
+```
+
+### 3. Test Web Dashboard
+1. Start the application: `make run`
+2. Visit `http://localhost:8000/dashboard`
+3. Browse sessions at `http://localhost:8000/dashboard/sessions`
+4. Create a new research session to see live tracking
+
+### 4. Test Database Directly
+```python
+# Test database operations
+from app.database import get_db_manager
+
+db = get_db_manager()
+sessions = db.get_recent_sessions(limit=5)
+print(f"Found {len(sessions)} recent sessions")
+
+# Test session analytics
+if sessions:
+    session_id = sessions[0]['session_id']
+    arxiv_analytics = db.get_session_arxiv_analytics(session_id)
+    llm_analytics = db.get_session_llm_analytics(session_id)
+```
+
 ## Known Limitations
 
 *   **LLM Dependency:** The quality of the results heavily depends on the capabilities of the underlying LLM and the prompts used.
 *   **Parsing LLM Output:** Relies on the LLM consistently returning the requested JSON format. Errors in parsing can occur.
 *   **Basic Evolution:** The `EvolutionAgent` uses a simple combination strategy.
-*   **In-Memory Storage:** Hypothesis context is lost when the server restarts. A database would be needed for persistence.
 *   **Error Handling:** While improved, error handling for edge cases (e.g., API failures, parsing issues) could be more robust.
 *   **Prompt Engineering:** Prompts are functional but could be further optimized.
 *   **OpenAI Dependency:** The `openai` library is used as the client for OpenRouter.

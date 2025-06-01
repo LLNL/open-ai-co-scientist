@@ -40,7 +40,10 @@ class Hypothesis:
         }
 
 # Import config to access defaults easily
-from .config import config
+try:
+    from .config import config
+except ImportError:
+    from config import config
 
 class ResearchGoal:
     def __init__(self,
@@ -61,25 +64,81 @@ class ResearchGoal:
         self.reflection_temperature = reflection_temperature if reflection_temperature is not None else config.get('step_temperatures', {}).get('reflection', 0.5)
         self.elo_k_factor = elo_k_factor if elo_k_factor is not None else config.get('elo_k_factor', 32)
         self.top_k_hypotheses = top_k_hypotheses if top_k_hypotheses is not None else config.get('top_k_hypotheses', 2)
+        
+        # Literature context for hypothesis generation
+        self.literature_context: List[Dict] = []  # Will be populated with relevant papers
 
 
 class ContextMemory:
     """
-    A simple in-memory context storage.
+    A hybrid context storage that supports both in-memory and persistent database storage.
     """
-    def __init__(self):
+    def __init__(self, session_id: str = None, use_database: bool = True):
+        self.session_id = session_id
+        self.use_database = use_database
         self.hypotheses: Dict[str, Hypothesis] = {}  # key: hypothesis_id
         self.tournament_results: List[Dict] = []
         self.meta_review_feedback: List[Dict] = []
         self.iteration_number: int = 0
+        
+        if self.use_database:
+            from .database import get_db_manager
+            self.db_manager = get_db_manager()
+            if session_id:
+                self._load_session_data()
+
+    def _load_session_data(self):
+        """Load session data from database"""
+        if not self.use_database or not self.session_id:
+            return
+        
+        hypotheses = self.db_manager.get_session_hypotheses(self.session_id, active_only=False)
+        for hypothesis in hypotheses:
+            self.hypotheses[hypothesis.hypothesis_id] = hypothesis
 
     def add_hypothesis(self, hypothesis: Hypothesis):
         self.hypotheses[hypothesis.hypothesis_id] = hypothesis
-        # Consider moving logging out of the model if possible
-        # logger.info(f"Added hypothesis {hypothesis.hypothesis_id}")
+        
+        if self.use_database and self.session_id:
+            self.db_manager.save_hypothesis(hypothesis, self.session_id)
 
     def get_active_hypotheses(self) -> List[Hypothesis]:
         return [h for h in self.hypotheses.values() if h.is_active]
+    
+    def save_tournament_result(self, hypothesis1_id: str, hypothesis2_id: str, winner_id: str,
+                              old_elo1: float, old_elo2: float, new_elo1: float, new_elo2: float):
+        """Save tournament result to memory and database"""
+        result = {
+            'hypothesis1_id': hypothesis1_id,
+            'hypothesis2_id': hypothesis2_id,
+            'winner_id': winner_id,
+            'old_elo1': old_elo1,
+            'old_elo2': old_elo2,
+            'new_elo1': new_elo1,
+            'new_elo2': new_elo2,
+            'iteration': self.iteration_number
+        }
+        self.tournament_results.append(result)
+        
+        if self.use_database and self.session_id:
+            self.db_manager.save_tournament_result(
+                self.session_id, self.iteration_number, hypothesis1_id, hypothesis2_id,
+                winner_id, old_elo1, old_elo2, new_elo1, new_elo2
+            )
+    
+    def save_meta_review(self, critique: str, suggested_next_steps: List[str]):
+        """Save meta-review feedback to memory and database"""
+        review = {
+            'critique': critique,
+            'suggested_next_steps': suggested_next_steps,
+            'iteration': self.iteration_number
+        }
+        self.meta_review_feedback.append(review)
+        
+        if self.use_database and self.session_id:
+            self.db_manager.save_meta_review(
+                self.session_id, self.iteration_number, critique, suggested_next_steps
+            )
 
 
 ###############################################################################

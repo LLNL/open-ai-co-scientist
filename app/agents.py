@@ -16,15 +16,18 @@ from .config import config
 
 # --- Agent-Specific LLM Calls (Moved from main.py/utils.py for better cohesion) ---
 
-# Updated signature to accept temperature
-def call_llm_for_generation(prompt: str, num_hypotheses: int = 3, temperature: float = 0.7) -> List[Dict]:
+# Updated signature to accept temperature and session context
+def call_llm_for_generation(prompt: str, num_hypotheses: int = 3, temperature: float = 0.7,
+                           session_id: str = None) -> List[Dict]:
     """Calls LLM for generating hypotheses, handling JSON parsing."""
-    logger.info("LLM generation called with prompt: %s, num_hypotheses: %d, temperature: %.2f", prompt, num_hypotheses, temperature)
+    logger.debug("LLM generation called with prompt: %s, num_hypotheses: %d, temperature: %.2f", prompt, num_hypotheses, temperature)
+    logger.info("LLM generation called - hypotheses: %d, temperature: %.2f", num_hypotheses, temperature)
     full_prompt = prompt + "\n\nPlease return the response as a JSON array of objects, where each object has a 'title' and 'text' key."
 
-    # Pass the received temperature down to the actual LLM call
-    response = call_llm(full_prompt, temperature=temperature)
-    logger.info("LLM generation response: %s", response)
+    # Pass the received temperature and session context down to the actual LLM call
+    response = call_llm(full_prompt, temperature=temperature, call_type="generation", session_id=session_id)
+    logger.debug("LLM generation response: %s", response)
+    logger.info("LLM generation response received - length: %d chars", len(response))
 
     if response.startswith("Error:"):
         logger.error(f"LLM generation call failed: {response}")
@@ -43,14 +46,16 @@ def call_llm_for_generation(prompt: str, num_hypotheses: int = 3, temperature: f
         if not isinstance(hypotheses_data, list) or not all(isinstance(h, dict) and "title" in h and "text" in h for h in hypotheses_data):
             error_message = "Invalid JSON format: Expected a list of objects with 'title' and 'text' keys."
             raise ValueError(error_message)
-        logger.info("Parsed generated hypotheses: %s", hypotheses_data)
+        logger.debug("Parsed generated hypotheses: %s", hypotheses_data)
+        logger.info("Successfully parsed %d hypotheses from LLM response", len(hypotheses_data))
         return hypotheses_data
     except (json.JSONDecodeError, ValueError) as e:
         logger.error("Could not parse LLM generation response as JSON: %s", response, exc_info=True)
         return [{"title": "Error", "text": f"Could not parse LLM response: {e}"}]
 
-# Updated signature to accept temperature
-def call_llm_for_reflection(hypothesis_text: str, temperature: float = 0.5) -> Dict:
+# Updated signature to accept temperature and session context
+def call_llm_for_reflection(hypothesis_text: str, temperature: float = 0.5,
+                           session_id: str = None, hypothesis_id: str = None) -> Dict:
     """Calls LLM for reviewing a hypothesis, handling JSON parsing."""
     logger.info("LLM reflection called with temperature: %.2f", temperature)
     prompt = (
@@ -61,9 +66,11 @@ def call_llm_for_reflection(hypothesis_text: str, temperature: float = 0.5) -> D
         f"Do not provide PubMed IDs (PMIDs) unless this is specifically a biomedical/life sciences hypothesis.\n\n"
         f"Return the response as a JSON object with the following keys: 'novelty_review', 'feasibility_review', 'comment', 'references'."
     )
-    # Pass the received temperature down to the actual LLM call
-    response = call_llm(prompt, temperature=temperature)
-    logger.info("LLM reflection response for hypothesis: %s", response)
+    # Pass the received temperature and session context down to the actual LLM call
+    response = call_llm(prompt, temperature=temperature, call_type="reflection", 
+                       session_id=session_id, hypothesis_id=hypothesis_id)
+    logger.debug("LLM reflection response for hypothesis: %s", response)
+    logger.info("LLM reflection response received for hypothesis %s - length: %d chars", hypothesis_id or "unknown", len(response))
 
     if response.startswith("Error:"):
         logger.error(f"LLM reflection call failed: {response}")
@@ -111,7 +118,10 @@ def call_llm_for_reflection(hypothesis_text: str, temperature: float = 0.5) -> D
         logger.warning("Error parsing LLM reflection response: %s", response, exc_info=True)
         review_data["comment"] = f"Could not parse LLM response: {e}" # Update comment with error
 
-    logger.info("Parsed reflection data: %s", review_data)
+    logger.debug("Parsed reflection data: %s", review_data)
+    logger.info("Successfully parsed reflection - novelty: %s, feasibility: %s, refs: %d", 
+                review_data.get("novelty_review"), review_data.get("feasibility_review"), 
+                len(review_data.get("references", [])))
     return review_data
 
 
@@ -170,6 +180,47 @@ def combine_hypotheses(hypoA: Hypothesis, hypoB: Hypothesis) -> Hypothesis:
 ###############################################################################
 
 class GenerationAgent:
+    def _track_paper_references(self, hypothesis_id: str, references: List[str], 
+                               db_manager, added_by: str = "llm_generation"):
+        """Extract and track arXiv paper references from a reference list"""
+        import re
+        
+        arxiv_patterns = [
+            r'arXiv:(\d{4}\.\d{4,5})',  # arXiv:2301.12345
+            r'(\d{4}\.\d{4,5})',        # 2301.12345
+            r'arXiv:([a-z-]+/\d{7})',   # arXiv:cs/0701001 (old format)
+        ]
+        
+        for ref in references:
+            if isinstance(ref, str):
+                for pattern in arxiv_patterns:
+                    matches = re.findall(pattern, ref, re.IGNORECASE)
+                    for match in matches:
+                        arxiv_id = match
+                        # Normalize old format to new format if needed
+                        if '/' in arxiv_id:
+                            continue  # Skip old format for now
+                        
+                        # Try to save the paper reference
+                        try:
+                            # First try to get paper details and save to papers table
+                            from .tools.arxiv_search import ArxivSearchTool
+                            arxiv_tool = ArxivSearchTool()
+                            paper_data = arxiv_tool.get_paper_details(arxiv_id)
+                            
+                            if paper_data:
+                                db_manager.save_arxiv_paper(paper_data)
+                                db_manager.save_hypothesis_paper_reference(
+                                    hypothesis_id=hypothesis_id,
+                                    arxiv_id=arxiv_id,
+                                    reference_type="inspiration",
+                                    added_by=added_by,
+                                    extraction_method="regex_pattern"
+                                )
+                                logger.debug(f"Tracked paper reference: {arxiv_id} -> {hypothesis_id}")
+                        except Exception as e:
+                            logger.warning(f"Failed to track paper reference {arxiv_id}: {e}")
+
     def generate_new_hypotheses(self, research_goal: ResearchGoal, context: ContextMemory) -> List[Hypothesis]:
         """Generates new hypotheses using LLM, based on research_goal settings."""
         # Use settings from research_goal object
@@ -177,14 +228,38 @@ class GenerationAgent:
         gen_temp = research_goal.generation_temperature
         llm_model_to_use = research_goal.llm_model # Ensure call_llm uses this if needed, or pass it
 
+        # Build literature context section
+        literature_section = ""
+        if hasattr(research_goal, 'literature_context') and research_goal.literature_context:
+            literature_section = "\n\nRelevant Recent Literature:\n"
+            for i, paper in enumerate(research_goal.literature_context[:5], 1):  # Top 5 papers
+                # Extract key information from paper
+                title = paper.get('title', 'Unknown Title')
+                authors = ', '.join(paper.get('authors', [])[:3])  # First 3 authors
+                if len(paper.get('authors', [])) > 3:
+                    authors += " et al."
+                abstract = paper.get('abstract', '')[:300] + "..." if len(paper.get('abstract', '')) > 300 else paper.get('abstract', '')
+                arxiv_id = paper.get('arxiv_id', '')
+                
+                literature_section += f"{i}. {title}\n"
+                literature_section += f"   Authors: {authors}\n"
+                literature_section += f"   ArXiv ID: {arxiv_id}\n"
+                literature_section += f"   Abstract: {abstract}\n\n"
+            
+            literature_section += "Please consider these recent findings when generating hypotheses, building upon existing knowledge while identifying novel research directions.\n"
+
         prompt = (
             f"Research Goal: {research_goal.description}\n"
             f"Constraints: {research_goal.constraints}\n"
-            f"Existing Hypothesis IDs: {list(context.hypotheses.keys())}\n" # Provide context
-            f"Please propose {num_to_generate} novel and feasible hypotheses with rationale, avoiding duplication with existing IDs.\n"
+            f"Existing Hypothesis IDs: {list(context.hypotheses.keys())}\n"
+            f"{literature_section}"
+            f"Please propose {num_to_generate} novel and feasible hypotheses with rationale, avoiding duplication with existing IDs. "
+            f"Consider how your hypotheses can advance beyond the current literature while addressing gaps or unexplored directions.\n"
         )
-        # Pass the specific temperature and num_hypotheses
-        raw_output = call_llm_for_generation(prompt, num_hypotheses=num_to_generate, temperature=gen_temp)
+        # Pass the specific temperature, num_hypotheses, and session context
+        session_id = getattr(context, 'session_id', None)
+        raw_output = call_llm_for_generation(prompt, num_hypotheses=num_to_generate, 
+                                           temperature=gen_temp, session_id=session_id)
         new_hypos = []
         for idea in raw_output:
              # Check for error response from LLM call
@@ -197,11 +272,61 @@ class GenerationAgent:
             while hypo_id in context.hypotheses:
                 hypo_id = generate_unique_id("G")
             h = Hypothesis(hypo_id, idea["title"], idea["text"])
-            logger.info("Generated hypothesis: %s", h.to_dict())
+            
+            # Track any paper references found in generated text if context has database support
+            if hasattr(context, 'db_manager') and context.db_manager and context.session_id:
+                # Check both title and text for references
+                all_text = f"{h.title} {h.text}"
+                self._track_paper_references(h.hypothesis_id, [all_text], 
+                                           context.db_manager, "llm_generation")
+            
+            logger.debug("Generated hypothesis: %s", h.to_dict())
+            logger.info("Generated hypothesis: %s - %s", h.hypothesis_id, h.title)
             new_hypos.append(h)
         return new_hypos
 
 class ReflectionAgent:
+    def _track_paper_references(self, hypothesis_id: str, references: List[str], 
+                               db_manager, added_by: str = "llm_reflection"):
+        """Extract and track arXiv paper references from a reference list"""
+        import re
+        
+        arxiv_patterns = [
+            r'arXiv:(\d{4}\.\d{4,5})',  # arXiv:2301.12345
+            r'(\d{4}\.\d{4,5})',        # 2301.12345
+            r'arXiv:([a-z-]+/\d{7})',   # arXiv:cs/0701001 (old format)
+        ]
+        
+        for ref in references:
+            if isinstance(ref, str):
+                for pattern in arxiv_patterns:
+                    matches = re.findall(pattern, ref, re.IGNORECASE)
+                    for match in matches:
+                        arxiv_id = match
+                        # Normalize old format to new format if needed
+                        if '/' in arxiv_id:
+                            continue  # Skip old format for now
+                        
+                        # Try to save the paper reference
+                        try:
+                            # First try to get paper details and save to papers table
+                            from .tools.arxiv_search import ArxivSearchTool
+                            arxiv_tool = ArxivSearchTool()
+                            paper_data = arxiv_tool.get_paper_details(arxiv_id)
+                            
+                            if paper_data:
+                                db_manager.save_arxiv_paper(paper_data)
+                                db_manager.save_hypothesis_paper_reference(
+                                    hypothesis_id=hypothesis_id,
+                                    arxiv_id=arxiv_id,
+                                    reference_type="citation",
+                                    added_by=added_by,
+                                    extraction_method="regex_pattern"
+                                )
+                                logger.debug(f"Tracked paper reference: {arxiv_id} -> {hypothesis_id}")
+                        except Exception as e:
+                            logger.warning(f"Failed to track paper reference {arxiv_id}: {e}")
+
     def review_hypotheses(self, hypotheses: List[Hypothesis], context: ContextMemory, research_goal: ResearchGoal) -> None:
         """Reviews hypotheses using LLM, based on research_goal settings."""
         # Use reflection temperature from research_goal
@@ -212,8 +337,10 @@ class ReflectionAgent:
             # Avoid re-reviewing if already reviewed (optional optimization)
             # if h.novelty_review is not None and h.feasibility_review is not None:
             #    continue
-            # Pass the specific temperature
-            result = call_llm_for_reflection(h.text, temperature=reflect_temp)
+            # Pass the specific temperature and session context
+            session_id = getattr(context, 'session_id', None)
+            result = call_llm_for_reflection(h.text, temperature=reflect_temp,
+                                           session_id=session_id, hypothesis_id=h.hypothesis_id)
             h.novelty_review = result["novelty_review"]
             h.feasibility_review = result["feasibility_review"]
             # Append comment only if it's not the default error message
@@ -222,6 +349,10 @@ class ReflectionAgent:
             # Only extend references if the list is not empty
             if result["references"]:
                  h.references.extend(result["references"])
+                 # Track paper-hypothesis relationships if context has database support
+                 if hasattr(context, 'db_manager') and context.db_manager and context.session_id:
+                     self._track_paper_references(h.hypothesis_id, result["references"], 
+                                                 context.db_manager, "llm_reflection")
             logger.info("Reviewed hypothesis: %s, Novelty: %s, Feasibility: %s", h.hypothesis_id, h.novelty_review, h.feasibility_review)
 
 class RankingAgent:
@@ -251,16 +382,28 @@ class RankingAgent:
         for hA, hB in pairs:
             winner = run_pairwise_debate(hA, hB)
             loser = hB if winner == hA else hA
+            # Store old scores for database logging
+            old_winner_score = winner.elo_score
+            old_loser_score = loser.elo_score
+            
             # Pass the specific k_factor
             update_elo(winner, loser, k_factor=k_factor)
-            # Record result in context (consider if this needs iteration info)
-            context.tournament_results.append({
-                "iteration": context.iteration_number, # Add iteration number
-                "winner": winner.hypothesis_id,
-                "loser": loser.hypothesis_id,
-                "winner_score_after": winner.elo_score,
-                "loser_score_after": loser.elo_score
-            })
+            
+            # Record result in context with database support
+            if hasattr(context, 'save_tournament_result'):
+                context.save_tournament_result(
+                    winner.hypothesis_id, loser.hypothesis_id, winner.hypothesis_id,
+                    old_winner_score, old_loser_score, winner.elo_score, loser.elo_score
+                )
+            else:
+                # Fallback to in-memory storage
+                context.tournament_results.append({
+                    "iteration": context.iteration_number,
+                    "winner": winner.hypothesis_id,
+                    "loser": loser.hypothesis_id,
+                    "winner_score_after": winner.elo_score,
+                    "loser_score_after": loser.elo_score
+                })
 
 class EvolutionAgent:
     def evolve_hypotheses(self, context: ContextMemory, research_goal: ResearchGoal) -> List[Hypothesis]:
@@ -358,7 +501,17 @@ class MetaReviewAgent:
                 "suggested_next_steps": next_steps
             }
         }
-        context.meta_review_feedback.append(overview) # Store feedback in context
+        
+        # Store feedback in context with database support
+        if hasattr(context, 'save_meta_review'):
+            context.save_meta_review(
+                "; ".join(comment_summary),
+                next_steps
+            )
+        else:
+            # Fallback to in-memory storage
+            context.meta_review_feedback.append(overview)
+        
         logger.info("Meta-review complete: %s", overview)
         return overview
 
