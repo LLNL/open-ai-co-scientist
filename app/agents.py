@@ -55,8 +55,10 @@ def call_llm_for_reflection(hypothesis_text: str, temperature: float = 0.5) -> D
     logger.info("LLM reflection called with temperature: %.2f", temperature)
     prompt = (
         f"Review the following hypothesis and provide a novelty assessment (HIGH, MEDIUM, or LOW), "
-        f"a feasibility assessment (HIGH, MEDIUM, or LOW), a comment, and a list of references (PMIDs) in JSON format:\n\n"
+        f"a feasibility assessment (HIGH, MEDIUM, or LOW), a comment, and a list of relevant references in JSON format:\n\n"
         f"Hypothesis: {hypothesis_text}\n\n"
+        f"For references, provide arXiv IDs (e.g., '2301.12345'), DOIs, or paper titles with venues that are relevant to this hypothesis. "
+        f"Do not provide PubMed IDs (PMIDs) unless this is specifically a biomedical/life sciences hypothesis.\n\n"
         f"Return the response as a JSON object with the following keys: 'novelty_review', 'feasibility_review', 'comment', 'references'."
     )
     # Pass the received temperature down to the actual LLM call

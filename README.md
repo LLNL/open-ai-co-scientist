@@ -96,9 +96,58 @@ The system will generate a list of hypotheses related to the research goal. Each
 *   Novelty and feasibility assessments (HIGH, MEDIUM, LOW)
 *   An Elo score (representing its relative strength)
 *   Comments from the LLM review
-*   References (if found by the LLM). These are PubMed identifiers (PMIDs).
+*   References (if found by the LLM). These include arXiv IDs, DOIs, paper titles, and PubMed identifiers (PMIDs) when appropriate for biomedical topics.
 
-The web interface will display the top-ranked hypotheses after each cycle, along with a meta-review critique, suggested next steps, and a hypothesis similarity graph. The results are iterative, meaning that the hypotheses should improve over multiple cycles. Log files for each run (initiated by "Submit Research Goal") are created in the `results/` directory with a timestamp.
+The web interface will display the top-ranked hypotheses after each cycle, along with a meta-review critique, suggested next steps, a hypothesis similarity graph, and a **References section** showing related arXiv papers and literature citations. The results are iterative, meaning that the hypotheses should improve over multiple cycles. Log files for each run (initiated by "Submit Research Goal") are created in the `results/` directory with a timestamp.
+
+## References Section
+
+The AI Co-Scientist system includes an integrated literature discovery feature that automatically finds and displays relevant research papers related to your research goal and generated hypotheses.
+
+### Features
+
+**Automatic arXiv Integration:**
+- Searches arXiv.org for papers related to your research goal
+- Displays up to 5 most relevant papers with full metadata
+- Shows paper titles, authors, abstracts, publication dates, and categories
+- Provides direct links to arXiv papers and PDF downloads
+
+**Smart Reference Detection:**
+- Automatically detects different types of references from hypothesis reviews
+- **arXiv IDs**: Links to arXiv papers (e.g., `2301.12345`, `arxiv:1706.03762`)
+- **DOIs**: Links to journal articles (e.g., `10.1145/3394486.3403087`)
+- **PubMed IDs**: Links to biomedical literature with domain-appropriate warnings
+- **Paper titles**: Displays general citations and conference papers
+
+**Domain-Appropriate References:**
+- For computer science topics: Prioritizes arXiv papers and CS conferences
+- For biomedical topics: Supports PubMed integration
+- Provides warnings when PubMed references appear in non-biomedical contexts
+
+### How It Works
+
+1. **After each cycle**, the system:
+   - Extracts reference IDs from LLM-generated hypothesis reviews
+   - Searches arXiv for papers matching your research goal keywords
+   - Processes and formats all references for display
+
+2. **The References section displays**:
+   - **Related arXiv Papers**: Automatically discovered papers with full details
+   - **Additional References**: Citations mentioned in hypothesis reviews
+
+3. **Error handling and logging**:
+   - Comprehensive frontend-to-backend logging for debugging
+   - Graceful fallbacks if arXiv search fails
+   - Detailed error reporting in log files
+
+### API Endpoints
+
+The references feature uses several API endpoints:
+- `POST /arxiv/search` - Search arXiv for papers
+- `GET /arxiv/paper/{id}` - Get specific paper details  
+- `GET /arxiv/categories` - List available arXiv categories
+- `GET /arxiv/test` - Testing interface for arXiv integration
+- `POST /log_frontend_error` - Frontend error logging
 
 ## Configuration (config.yaml)
 

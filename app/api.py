@@ -10,10 +10,12 @@ from fastapi.staticfiles import StaticFiles
 # Import components from other modules in the package
 from .models import (
     ContextMemory, ResearchGoal, ResearchGoalRequest,
-    HypothesisResponse, Hypothesis # Hypothesis needed by ContextMemory
+    HypothesisResponse, Hypothesis, # Hypothesis needed by ContextMemory
+    ArxivSearchRequest, ArxivSearchResponse, ArxivPaper, ArxivTrendsResponse
 )
 from .agents import SupervisorAgent
 from .utils import logger # Use the configured logger
+from .tools.arxiv_search import ArxivSearchTool, get_categories_for_field
 # from .config import config # Config might be needed if endpoints use it directly
 
 ###############################################################################
@@ -158,6 +160,475 @@ def list_hypotheses_endpoint():
     logger.info(f"Retrieving {len(active_hypotheses)} active hypotheses.")
     return [HypothesisResponse(**h.to_dict()) for h in active_hypotheses]
 
+@app.post("/log_frontend_error")
+def log_frontend_error(log_data: Dict):
+    """Logs frontend errors and information to the backend log."""
+    try:
+        level = log_data.get('level', 'INFO').upper()
+        message = log_data.get('message', 'No message provided')
+        timestamp = log_data.get('timestamp', '')
+        data = log_data.get('data', {})
+        
+        # Format the log message
+        log_message = f"[FRONTEND-{level}] {message}"
+        if data:
+            log_message += f" | Data: {data}"
+        if timestamp:
+            log_message += f" | Client Time: {timestamp}"
+        
+        # Log at appropriate level
+        if level == 'ERROR':
+            logger.error(log_message)
+        elif level == 'WARNING':
+            logger.warning(log_message)
+        else:
+            logger.info(log_message)
+        
+        return {"status": "logged", "level": level}
+        
+    except Exception as e:
+        logger.error(f"Error logging frontend message: {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}
+
+###############################################################################
+# ArXiv Search Endpoints
+###############################################################################
+
+@app.post("/arxiv/search", response_model=ArxivSearchResponse)
+def search_arxiv_papers(search_request: ArxivSearchRequest):
+    """Search arXiv for papers based on query and filters."""
+    import time
+    start_time = time.time()
+    
+    try:
+        arxiv_tool = ArxivSearchTool(max_results=search_request.max_results or 10)
+        
+        if search_request.days_back:
+            # Search recent papers
+            papers = arxiv_tool.search_recent_papers(
+                query=search_request.query,
+                days_back=search_request.days_back,
+                max_results=search_request.max_results
+            )
+        else:
+            # Regular search
+            papers = arxiv_tool.search_papers(
+                query=search_request.query,
+                max_results=search_request.max_results,
+                categories=search_request.categories,
+                sort_by=search_request.sort_by or "relevance"
+            )
+        
+        search_time = (time.time() - start_time) * 1000  # Convert to milliseconds
+        
+        # Convert to Pydantic models
+        arxiv_papers = [ArxivPaper(**paper) for paper in papers]
+        
+        logger.info(f"ArXiv search for '{search_request.query}' returned {len(papers)} papers in {search_time:.2f}ms")
+        
+        return ArxivSearchResponse(
+            query=search_request.query,
+            total_results=len(papers),
+            papers=arxiv_papers,
+            search_time_ms=search_time
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in arXiv search: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"ArXiv search failed: {str(e)}")
+
+@app.get("/arxiv/paper/{arxiv_id}", response_model=ArxivPaper)
+def get_arxiv_paper(arxiv_id: str):
+    """Get detailed information for a specific arXiv paper."""
+    try:
+        arxiv_tool = ArxivSearchTool()
+        paper = arxiv_tool.get_paper_details(arxiv_id)
+        
+        if not paper:
+            raise HTTPException(status_code=404, detail=f"Paper with arXiv ID '{arxiv_id}' not found")
+        
+        logger.info(f"Retrieved arXiv paper: {arxiv_id}")
+        return ArxivPaper(**paper)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving arXiv paper {arxiv_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve paper: {str(e)}")
+
+@app.get("/arxiv/trends/{query}", response_model=ArxivTrendsResponse)
+def analyze_arxiv_trends(query: str, days_back: int = 30):
+    """Analyze research trends for a given topic."""
+    try:
+        arxiv_tool = ArxivSearchTool()
+        trends = arxiv_tool.analyze_research_trends(query, days_back)
+        
+        # Convert papers to Pydantic models
+        arxiv_papers = [ArxivPaper(**paper) for paper in trends['papers']]
+        
+        logger.info(f"ArXiv trends analysis for '{query}' found {trends['total_papers']} papers")
+        
+        return ArxivTrendsResponse(
+            query=query,
+            total_papers=trends['total_papers'],
+            date_range=trends['date_range'],
+            top_categories=trends['top_categories'],
+            top_authors=trends['top_authors'],
+            papers=arxiv_papers
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in arXiv trends analysis: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Trends analysis failed: {str(e)}")
+
+@app.get("/arxiv/categories")
+def get_arxiv_categories():
+    """Get available arXiv categories by field."""
+    from .tools.arxiv_search import ARXIV_CATEGORIES
+    return {
+        "categories_by_field": ARXIV_CATEGORIES,
+        "all_categories": [cat for cats in ARXIV_CATEGORIES.values() for cat in cats]
+    }
+
+@app.get("/arxiv/test")
+async def arxiv_test_page():
+    """Serves the arXiv testing interface."""
+    html_content = '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>ArXiv Search Testing Interface</title>
+        <style>
+            body { 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                margin: 20px; 
+                background-color: #f5f5f5;
+            }
+            .container {
+                max-width: 1200px;
+                margin: 0 auto;
+                background-color: white;
+                padding: 30px;
+                border-radius: 10px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            }
+            h1 { 
+                color: #2c3e50; 
+                text-align: center;
+                margin-bottom: 30px;
+            }
+            .search-form {
+                background-color: #f8f9fa;
+                padding: 20px;
+                border-radius: 8px;
+                margin-bottom: 30px;
+            }
+            .form-group {
+                margin-bottom: 15px;
+            }
+            label {
+                display: block;
+                margin-bottom: 5px;
+                font-weight: bold;
+                color: #34495e;
+            }
+            input, select, textarea {
+                width: 100%;
+                padding: 8px 12px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-size: 14px;
+                box-sizing: border-box;
+            }
+            textarea {
+                height: 80px;
+                resize: vertical;
+            }
+            .form-row {
+                display: flex;
+                gap: 15px;
+            }
+            .form-row .form-group {
+                flex: 1;
+            }
+            button {
+                background-color: #3498db;
+                color: white;
+                padding: 10px 20px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                margin-right: 10px;
+                margin-top: 10px;
+            }
+            button:hover {
+                background-color: #2980b9;
+            }
+            .secondary-btn {
+                background-color: #95a5a6;
+            }
+            .secondary-btn:hover {
+                background-color: #7f8c8d;
+            }
+            #results {
+                margin-top: 30px;
+            }
+            .paper {
+                border: 1px solid #ddd;
+                padding: 20px;
+                margin-bottom: 20px;
+                border-radius: 8px;
+                background-color: #fff;
+            }
+            .paper-title {
+                font-size: 18px;
+                font-weight: bold;
+                color: #2c3e50;
+                margin-bottom: 10px;
+            }
+            .paper-meta {
+                color: #7f8c8d;
+                font-size: 14px;
+                margin-bottom: 10px;
+            }
+            .paper-abstract {
+                line-height: 1.5;
+                margin-bottom: 15px;
+                text-align: justify;
+            }
+            .paper-links a {
+                color: #3498db;
+                text-decoration: none;
+                margin-right: 15px;
+            }
+            .paper-links a:hover {
+                text-decoration: underline;
+            }
+            .stats {
+                background-color: #ecf0f1;
+                padding: 15px;
+                border-radius: 8px;
+                margin-bottom: 20px;
+            }
+            .error {
+                color: #e74c3c;
+                background-color: #fdf2f2;
+                padding: 15px;
+                border-radius: 8px;
+                border-left: 4px solid #e74c3c;
+                margin-bottom: 20px;
+            }
+            .loading {
+                text-align: center;
+                padding: 40px;
+                color: #7f8c8d;
+            }
+            .categories {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 5px;
+                margin-bottom: 10px;
+            }
+            .category-tag {
+                background-color: #3498db;
+                color: white;
+                padding: 2px 8px;
+                border-radius: 12px;
+                font-size: 12px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🔬 ArXiv Search Testing Interface</h1>
+            
+            <div class="search-form">
+                <div class="form-group">
+                    <label for="query">Search Query:</label>
+                    <textarea id="query" placeholder="Enter your search query (e.g., 'machine learning', 'neural networks', 'quantum computing')">machine learning</textarea>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="maxResults">Max Results:</label>
+                        <input type="number" id="maxResults" value="10" min="1" max="50">
+                    </div>
+                    <div class="form-group">
+                        <label for="sortBy">Sort By:</label>
+                        <select id="sortBy">
+                            <option value="relevance">Relevance</option>
+                            <option value="lastUpdatedDate">Last Updated</option>
+                            <option value="submittedDate">Submitted Date</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="daysBack">Recent Papers (days):</label>
+                        <input type="number" id="daysBack" placeholder="Leave empty for all time" min="1" max="365">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="categories">Categories (optional):</label>
+                    <select id="categories" multiple style="height: 100px;">
+                        <optgroup label="Computer Science">
+                            <option value="cs.AI">cs.AI - Artificial Intelligence</option>
+                            <option value="cs.LG">cs.LG - Machine Learning</option>
+                            <option value="cs.CL">cs.CL - Computation and Language</option>
+                            <option value="cs.CV">cs.CV - Computer Vision</option>
+                            <option value="cs.RO">cs.RO - Robotics</option>
+                            <option value="cs.NE">cs.NE - Neural and Evolutionary Computing</option>
+                        </optgroup>
+                        <optgroup label="Physics">
+                            <option value="physics.data-an">physics.data-an - Data Analysis</option>
+                            <option value="physics.comp-ph">physics.comp-ph - Computational Physics</option>
+                        </optgroup>
+                        <optgroup label="Mathematics">
+                            <option value="math.ST">math.ST - Statistics Theory</option>
+                            <option value="math.OC">math.OC - Optimization and Control</option>
+                        </optgroup>
+                    </select>
+                    <small style="color: #7f8c8d;">Hold Ctrl/Cmd to select multiple categories</small>
+                </div>
+                
+                <button onclick="searchPapers()">🔍 Search Papers</button>
+                <button onclick="analyzeOptions()" class="secondary-btn">📊 Analyze Options</button>
+                <button onclick="clearResults()" class="secondary-btn">🗑️ Clear Results</button>
+            </div>
+            
+            <div id="results"></div>
+        </div>
+
+        <script>
+            let isSearching = false;
+
+            async function searchPapers() {
+                if (isSearching) return;
+                
+                const query = document.getElementById('query').value.trim();
+                if (!query) {
+                    alert('Please enter a search query');
+                    return;
+                }
+                
+                isSearching = true;
+                const resultsDiv = document.getElementById('results');
+                resultsDiv.innerHTML = '<div class="loading">🔄 Searching arXiv...</div>';
+                
+                try {
+                    const searchData = {
+                        query: query,
+                        max_results: parseInt(document.getElementById('maxResults').value),
+                        sort_by: document.getElementById('sortBy').value
+                    };
+                    
+                    const daysBack = document.getElementById('daysBack').value;
+                    if (daysBack) {
+                        searchData.days_back = parseInt(daysBack);
+                    }
+                    
+                    const categoriesSelect = document.getElementById('categories');
+                    const selectedCategories = Array.from(categoriesSelect.selectedOptions).map(option => option.value);
+                    if (selectedCategories.length > 0) {
+                        searchData.categories = selectedCategories;
+                    }
+                    
+                    const response = await fetch('/arxiv/search', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(searchData)
+                    });
+                    
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.detail || `HTTP ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    displayResults(data);
+                    
+                } catch (error) {
+                    resultsDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+                } finally {
+                    isSearching = false;
+                }
+            }
+            
+            function displayResults(data) {
+                const resultsDiv = document.getElementById('results');
+                
+                if (data.papers.length === 0) {
+                    resultsDiv.innerHTML = '<div class="stats">No papers found for your query.</div>';
+                    return;
+                }
+                
+                let html = `
+                    <div class="stats">
+                        <strong>📈 Search Results:</strong> Found ${data.total_results} papers for "${data.query}"
+                        ${data.search_time_ms ? ` in ${data.search_time_ms.toFixed(2)}ms` : ''}
+                    </div>
+                `;
+                
+                data.papers.forEach((paper, index) => {
+                    const publishedDate = paper.published ? new Date(paper.published).toLocaleDateString() : 'Unknown';
+                    const categoriesHtml = paper.categories.map(cat => `<span class="category-tag">${cat}</span>`).join('');
+                    
+                    html += `
+                        <div class="paper">
+                            <div class="paper-title">${paper.title}</div>
+                            <div class="paper-meta">
+                                <strong>Authors:</strong> ${paper.authors.join(', ')}<br>
+                                <strong>Published:</strong> ${publishedDate} | 
+                                <strong>Primary Category:</strong> ${paper.primary_category} |
+                                <strong>arXiv ID:</strong> ${paper.arxiv_id}
+                            </div>
+                            <div class="categories">${categoriesHtml}</div>
+                            <div class="paper-abstract">${paper.abstract}</div>
+                            <div class="paper-links">
+                                <a href="${paper.arxiv_url}" target="_blank">📄 View on arXiv</a>
+                                <a href="${paper.pdf_url}" target="_blank">📁 Download PDF</a>
+                                ${paper.doi ? `<a href="https://doi.org/${paper.doi}" target="_blank">🔗 DOI</a>` : ''}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                resultsDiv.innerHTML = html;
+            }
+            
+            function analyzeOptions() {
+                const options = `
+                    <div class="stats">
+                        <h3>🛠️ Additional Analysis Options</h3>
+                        <p><strong>Trends Analysis:</strong> Use <code>/arxiv/trends/{query}</code> to analyze research trends</p>
+                        <p><strong>Specific Paper:</strong> Use <code>/arxiv/paper/{arxiv_id}</code> to get details for a specific paper</p>
+                        <p><strong>Categories:</strong> Use <code>/arxiv/categories</code> to see all available categories</p>
+                        <p><strong>Recent Papers:</strong> Set "Recent Papers (days)" to filter by submission date</p>
+                        <p><strong>API Integration:</strong> All endpoints are available for programmatic access</p>
+                    </div>
+                `;
+                document.getElementById('results').innerHTML = options;
+            }
+            
+            function clearResults() {
+                document.getElementById('results').innerHTML = '';
+            }
+            
+            // Allow Enter key to search
+            document.getElementById('query').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    searchPapers();
+                }
+            });
+        </script>
+    </body>
+    </html>
+    '''
+    return responses.HTMLResponse(content=html_content)
+
 @app.get("/")
 async def root_endpoint():
     """Serves the main HTML page, injecting available models."""
@@ -183,9 +654,58 @@ async def root_endpoint():
             button { margin-top: 10px; padding: 8px 15px; }
             #results { margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px; }
             #errors { color: red; margin-top: 10px; }
+            #references { margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px; }
             h2, h3, h4, h5 { margin-top: 1.5em; }
             ul { padding-left: 20px; }
             li { margin-bottom: 10px; }
+            .reference-paper {
+                border: 1px solid #e0e0e0;
+                border-radius: 8px;
+                padding: 15px;
+                margin-bottom: 15px;
+                background-color: #fafafa;
+            }
+            .reference-title {
+                font-weight: bold;
+                color: #2c3e50;
+                margin-bottom: 8px;
+                font-size: 16px;
+            }
+            .reference-authors {
+                color: #7f8c8d;
+                font-size: 14px;
+                margin-bottom: 8px;
+            }
+            .reference-meta {
+                color: #95a5a6;
+                font-size: 12px;
+                margin-bottom: 10px;
+            }
+            .reference-abstract {
+                color: #34495e;
+                font-size: 14px;
+                line-height: 1.4;
+                margin-bottom: 10px;
+            }
+            .reference-links a {
+                color: #3498db;
+                text-decoration: none;
+                margin-right: 15px;
+                font-size: 14px;
+            }
+            .reference-links a:hover {
+                text-decoration: underline;
+            }
+            .reference-category {
+                display: inline-block;
+                background-color: #3498db;
+                color: white;
+                padding: 2px 6px;
+                border-radius: 10px;
+                font-size: 11px;
+                margin-right: 5px;
+                margin-bottom: 5px;
+            }
             #mynetwork {
                 width: 100%;
                 height: 500px; /* Explicit height */
@@ -246,6 +766,11 @@ async def root_endpoint():
 
         <h2>Results</h2>
         <div id="results"></div> <!-- Removed initial text -->
+
+        <h2>References</h2>
+        <div id="references">
+            <p style="color: #7f8c8d; font-style: italic;">arXiv papers related to generated hypotheses will appear here.</p>
+        </div>
 
         <h2>Errors</h2>
         <div id="errors"></div>
@@ -432,6 +957,9 @@ async def root_endpoint():
 
                     resultsDiv.innerHTML = resultsHTML;
 
+                    // Extract and display references
+                    await updateReferences(data);
+
                     if (graphData) {
                         initializeGraph(graphData.nodesStr, graphData.edgesStr);
                     }
@@ -442,6 +970,242 @@ async def root_endpoint():
                 } finally {
                     isRunning = false;
                     console.log("runCycle: isRunning set to false.");
+                }
+            }
+
+            // Function to log messages to backend for debugging
+            async function logToBackend(level, message, data = null) {
+                try {
+                    const logData = {
+                        level: level,
+                        message: message,
+                        timestamp: new Date().toISOString(),
+                        data: data
+                    };
+                    
+                    // Send log to backend endpoint (we'll create this)
+                    await fetch('/log_frontend_error', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(logData)
+                    });
+                } catch (e) {
+                    console.error('Failed to send log to backend:', e);
+                }
+            }
+
+            // Function to update references section with arXiv papers
+            async function updateReferences(data) {
+                console.log("Updating references section...");
+                await logToBackend('INFO', 'Starting references section update');
+                
+                const referencesDiv = document.getElementById('references');
+                
+                // Collect all unique reference IDs from hypotheses
+                const allReferences = new Set();
+                const researchGoal = document.getElementById('researchGoal').value.trim();
+                
+                await logToBackend('INFO', 'Extracting references from hypotheses', {
+                    researchGoal: researchGoal,
+                    hasSteps: !!data.steps
+                });
+                
+                // Extract references from all hypotheses in all steps
+                if (data.steps) {
+                    Object.values(data.steps).forEach(step => {
+                        if (step.hypotheses) {
+                            step.hypotheses.forEach(hypo => {
+                                if (hypo.references && Array.isArray(hypo.references)) {
+                                    hypo.references.forEach(ref => allReferences.add(ref));
+                                }
+                            });
+                        }
+                    });
+                }
+                
+                await logToBackend('INFO', 'References extraction complete', {
+                    totalReferences: allReferences.size,
+                    references: Array.from(allReferences)
+                });
+                
+                // If we have references or a research goal, try to find related arXiv papers
+                if (allReferences.size > 0 || researchGoal) {
+                    try {
+                        // Search for arXiv papers related to the research goal
+                        let arxivPapers = [];
+                        if (researchGoal) {
+                            await logToBackend('INFO', 'Starting arXiv search', { query: researchGoal });
+                            
+                            const searchResponse = await fetch('/arxiv/search', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    query: researchGoal,
+                                    max_results: 5,
+                                    sort_by: 'relevance'
+                                })
+                            });
+                            
+                            await logToBackend('INFO', 'arXiv search response received', {
+                                status: searchResponse.status,
+                                ok: searchResponse.ok
+                            });
+                            
+                            if (searchResponse.ok) {
+                                const searchData = await searchResponse.json();
+                                arxivPapers = searchData.papers || [];
+                                console.log(`Found ${arxivPapers.length} related arXiv papers`);
+                                await logToBackend('INFO', 'arXiv papers found', {
+                                    count: arxivPapers.length,
+                                    paperTitles: arxivPapers.map(p => p.title)
+                                });
+                            } else {
+                                const errorText = await searchResponse.text();
+                                await logToBackend('ERROR', 'arXiv search failed', {
+                                    status: searchResponse.status,
+                                    error: errorText
+                                });
+                            }
+                        }
+                        
+                        // Display the references
+                        await logToBackend('INFO', 'Calling displayReferences function');
+                        await displayReferences(arxivPapers, Array.from(allReferences));
+                        await logToBackend('INFO', 'References section update completed successfully');
+                        
+                    } catch (error) {
+                        console.error('Error fetching arXiv papers:', error);
+                        await logToBackend('ERROR', 'Error in updateReferences function', {
+                            errorMessage: error.message,
+                            errorStack: error.stack,
+                            errorName: error.name
+                        });
+                        referencesDiv.innerHTML = '<p style="color: #e74c3c;">Error loading references: ' + escapeHTML(error.message) + '</p>';
+                    }
+                } else {
+                    await logToBackend('INFO', 'No references or research goal found');
+                    referencesDiv.innerHTML = '<p style="color: #7f8c8d; font-style: italic;">No references found in generated hypotheses.</p>';
+                }
+            }
+            
+            // Function to display references in a formatted way
+            async function displayReferences(arxivPapers, additionalReferences) {
+                try {
+                    await logToBackend('INFO', 'Starting displayReferences function', {
+                        arxivPapersCount: arxivPapers ? arxivPapers.length : 0,
+                        additionalReferencesCount: additionalReferences ? additionalReferences.length : 0
+                    });
+                    
+                    const referencesDiv = document.getElementById('references');
+                    let referencesHTML = '';
+                    
+                    // Display arXiv papers
+                    if (arxivPapers && arxivPapers.length > 0) {
+                        await logToBackend('INFO', 'Processing arXiv papers for display');
+                        referencesHTML += '<h3>Related arXiv Papers</h3>';
+                        
+                        arxivPapers.forEach((paper, index) => {
+                            try {
+                                const publishedDate = paper.published ? new Date(paper.published).toLocaleDateString() : 'Unknown';
+                                const categoriesHTML = paper.categories ? paper.categories.slice(0, 3).map(cat => 
+                                    `<span class="reference-category">${escapeHTML(cat)}</span>`).join('') : '';
+                                
+                                referencesHTML += `
+                                    <div class="reference-paper">
+                                        <div class="reference-title">${escapeHTML(paper.title)}</div>
+                                        <div class="reference-authors">
+                                            <strong>Authors:</strong> ${escapeHTML(paper.authors.slice(0, 5).join(', '))}${paper.authors.length > 5 ? ' et al.' : ''}
+                                        </div>
+                                        <div class="reference-meta">
+                                            <strong>Published:</strong> ${publishedDate} | 
+                                            <strong>arXiv ID:</strong> ${escapeHTML(paper.arxiv_id)}
+                                        </div>
+                                        <div style="margin-bottom: 8px;">${categoriesHTML}</div>
+                                        <div class="reference-abstract">
+                                            ${escapeHTML(paper.abstract.length > 300 ? paper.abstract.substring(0, 300) + '...' : paper.abstract)}
+                                        </div>
+                                        <div class="reference-links">
+                                            <a href="${escapeHTML(paper.arxiv_url)}" target="_blank">📄 View on arXiv</a>
+                                            <a href="${escapeHTML(paper.pdf_url)}" target="_blank">📁 Download PDF</a>
+                                            ${paper.doi ? `<a href="https://doi.org/${escapeHTML(paper.doi)}" target="_blank">🔗 DOI</a>` : ''}
+                                        </div>
+                                    </div>
+                                `;
+                            } catch (paperError) {
+                                logToBackend('ERROR', `Error processing arXiv paper ${index}`, {
+                                    error: paperError.message,
+                                    paperData: paper
+                                });
+                            }
+                        });
+                        
+                        await logToBackend('INFO', 'arXiv papers HTML generation completed');
+                    }
+                
+                    // Display additional references if any
+                    if (additionalReferences && additionalReferences.length > 0) {
+                        await logToBackend('INFO', 'Processing additional references', {
+                            count: additionalReferences.length,
+                            references: additionalReferences
+                        });
+                        
+                        referencesHTML += '<h3>Additional References</h3>';
+                        referencesHTML += '<div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;">';
+                        referencesHTML += '<p><strong>References mentioned in hypothesis reviews:</strong></p>';
+                        referencesHTML += '<ul>';
+                        
+                        additionalReferences.forEach((ref, index) => {
+                            try {
+                                const refStr = escapeHTML(ref);
+                                
+                                // Detect arXiv ID (format: YYMM.NNNNN or starts with arXiv:)
+                                const isArxivId = /^\\d{4}\\.\\d{4,5}(v\\d+)?$/.test(ref);
+                                if (isArxivId || ref.toLowerCase().startsWith('arxiv:')) {
+                                    const arxivId = ref.toLowerCase().startsWith('arxiv:') ? ref.substring(6) : ref;
+                                    referencesHTML += '<li><strong>arXiv:</strong> <a href="https://arxiv.org/abs/' + arxivId + '" target="_blank">' + refStr + '</a></li>';
+                                }
+                                // Detect DOI (starts with 10. or doi:)
+                                else if (ref.startsWith('10.') || ref.toLowerCase().startsWith('doi:')) {
+                                    const doiId = ref.toLowerCase().startsWith('doi:') ? ref.substring(4) : ref;
+                                    referencesHTML += '<li><strong>DOI:</strong> <a href="https://doi.org/' + doiId + '" target="_blank">' + refStr + '</a></li>';
+                                }
+                                // Pure numbers might be PMIDs (but warn for CS topics)
+                                else if (/^\\d{8,}$/.test(ref)) {
+                                    referencesHTML += '<li><strong>PubMed ID:</strong> <a href="https://pubmed.ncbi.nlm.nih.gov/' + refStr + '/" target="_blank">' + refStr + '</a> <span style="color: #e74c3c; font-size: 12px;">(⚠️ Note: PubMed is primarily for biomedical literature)</span></li>';
+                                }
+                                // Everything else as generic reference
+                                else {
+                                    referencesHTML += '<li><strong>Reference:</strong> ' + refStr + '</li>';
+                                }
+                            } catch (refError) {
+                                logToBackend('ERROR', `Error processing additional reference ${index}`, {
+                                    error: refError.message,
+                                    reference: ref
+                                });
+                            }
+                        });
+                        
+                        referencesHTML += '</ul>';
+                        referencesHTML += '</div>';
+                        
+                        await logToBackend('INFO', 'Additional references processing completed');
+                    }
+                    
+                    if (!referencesHTML) {
+                        referencesHTML = '<p style="color: #7f8c8d; font-style: italic;">No references available for this research session.</p>';
+                    }
+                    
+                    referencesDiv.innerHTML = referencesHTML;
+                    await logToBackend('INFO', 'displayReferences function completed successfully');
+                    
+                } catch (error) {
+                    await logToBackend('ERROR', 'Error in displayReferences function', {
+                        errorMessage: error.message,
+                        errorStack: error.stack,
+                        errorName: error.name
+                    });
+                    const referencesDiv = document.getElementById('references');
+                    referencesDiv.innerHTML = '<p style="color: #e74c3c;">Error displaying references: ' + escapeHTML(error.message) + '</p>';
                 }
             }
 

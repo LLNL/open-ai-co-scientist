@@ -115,3 +115,45 @@ class OverviewResponse(BaseModel):
     meta_review_critique: List[str]
     top_hypotheses: List[HypothesisResponse]
     suggested_next_steps: List[str]
+
+###############################################################################
+# ArXiv Search Models
+###############################################################################
+
+class ArxivSearchRequest(BaseModel):
+    query: str
+    max_results: Optional[int] = 10
+    categories: Optional[List[str]] = None
+    sort_by: Optional[str] = "relevance"  # relevance, lastUpdatedDate, submittedDate
+    days_back: Optional[int] = None  # For recent papers search
+
+class ArxivPaper(BaseModel):
+    arxiv_id: str
+    entry_id: str
+    title: str
+    abstract: str
+    authors: List[str]
+    primary_category: str
+    categories: List[str]
+    published: Optional[str]
+    updated: Optional[str]
+    doi: Optional[str]
+    pdf_url: str
+    arxiv_url: str
+    comment: Optional[str]
+    journal_ref: Optional[str]
+    source: str = "arxiv"
+
+class ArxivSearchResponse(BaseModel):
+    query: str
+    total_results: int
+    papers: List[ArxivPaper]
+    search_time_ms: Optional[float]
+
+class ArxivTrendsResponse(BaseModel):
+    query: str
+    total_papers: int
+    date_range: str
+    top_categories: List[tuple]
+    top_authors: List[tuple]
+    papers: List[ArxivPaper]
