@@ -310,19 +310,4 @@ Suggested Next Steps:
     *   **Novelty:**  An assessment of the hypothesis's originality (HIGH, MEDIUM, LOW).
     *   **Feasibility:** An assessment of the hypothesis's practicality (HIGH, MEDIUM, LOW).
 *   **Combined Hypotheses:** Displays hypotheses that have been created by combining top-ranked hypotheses from previous cycles.
-*   **Suggested Next Steps:**  Recommendations for future research directions.<environment_details>
-# VSCode Visible Files
-(No visible files)
-
-# VSCode Open Tabs
-(No open tabs)
-
-# Current Time
-7/28/2025, 4:14:45 PM (America/Los_Angeles, UTC-7:00)
-
-# Context Window Usage
-162,325 / 1,048.576K tokens used (15%)
-
-# Current Mode
-ACT MODE
-</environment_details>
+*   **Suggested Next Steps:**  Recommendations for future research directions.
