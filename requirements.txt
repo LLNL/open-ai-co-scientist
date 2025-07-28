@@ -1,6 +1,5 @@
 openai
-fastapi
-uvicorn
+gradio
 pydantic
 PyYAML
 requests # Added for fetching models
