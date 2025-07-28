@@ -156,29 +156,242 @@ def run_cycle() -> Tuple[str, str, str]:
         return error_msg, "", ""
 
 def format_cycle_results(cycle_details: Dict) -> str:
-    """Format cycle results as HTML."""
+    """Format cycle results as HTML with expandable sections."""
     html = f"<h2>🔬 Iteration {cycle_details.get('iteration', 'Unknown')}</h2>"
     
-    # Meta-review
-    if cycle_details.get('meta_review'):
-        meta_review = cycle_details['meta_review']
-        html += "<h3>📋 Meta-Review</h3>"
-        
-        if meta_review.get('meta_review_critique'):
-            html += "<h4>Critique:</h4><ul>"
-            for critique in meta_review['meta_review_critique']:
-                html += f"<li>{critique}</li>"
-            html += "</ul>"
-        
-        if meta_review.get('research_overview', {}).get('suggested_next_steps'):
-            html += "<h4>Suggested Next Steps:</h4><ul>"
-            for step in meta_review['research_overview']['suggested_next_steps']:
-                html += f"<li>{step}</li>"
-            html += "</ul>"
+    # Process steps in order
+    steps = cycle_details.get('steps', {})
+    step_order = ['generation', 'reflection', 'ranking', 'evolution', 'reflection_evolved', 'ranking_final', 'proximity', 'meta_review']
     
-    # Hypotheses from different steps
+    # Step details with expandable sections
+    for step_name in step_order:
+        if step_name not in steps:
+            continue
+            
+        step_data = steps[step_name]
+        step_title = {
+            'generation': '🎯 Generation',
+            'reflection': '🔍 Reflection',
+            'ranking': '📊 Ranking',
+            'evolution': '🧬 Evolution',
+            'reflection_evolved': '🔍 Reflection (Evolved)',
+            'ranking_final': '📊 Final Ranking',
+            'proximity': '🔗 Proximity Analysis',
+            'meta_review': '📋 Meta-Review'
+        }.get(step_name, step_name.title())
+        
+        html += f"""
+        <details style="margin: 15px 0; border: 1px solid #ddd; border-radius: 8px; padding: 10px;">
+            <summary style="font-weight: bold; font-size: 1.1em; cursor: pointer; padding: 5px;">
+                {step_title}
+            </summary>
+            <div style="margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 5px;">
+        """
+        
+        # Step-specific content
+        if step_name == 'generation':
+            hypotheses = step_data.get('hypotheses', [])
+            html += f"<p><strong>Generated {len(hypotheses)} new hypotheses:</strong></p>"
+            for i, hypo in enumerate(hypotheses):
+                html += f"""
+                <div style="border-left: 3px solid #28a745; padding-left: 10px; margin: 10px 0;">
+                    <h5>#{i+1}: {hypo.get('title', 'Untitled')} (ID: {hypo.get('id', 'Unknown')})</h5>
+                    <p>{hypo.get('text', 'No description')}</p>
+                </div>
+                """
+                
+        elif step_name in ['reflection', 'reflection_evolved']:
+            hypotheses = step_data.get('hypotheses', [])
+            html += f"<p><strong>Reviewed {len(hypotheses)} hypotheses:</strong></p>"
+            for hypo in hypotheses:
+                html += f"""
+                <div style="border-left: 3px solid #17a2b8; padding-left: 10px; margin: 10px 0;">
+                    <h5>{hypo.get('title', 'Untitled')} (ID: {hypo.get('id', 'Unknown')})</h5>
+                    <p><strong>Novelty:</strong> {hypo.get('novelty_review', 'Not assessed')} | 
+                       <strong>Feasibility:</strong> {hypo.get('feasibility_review', 'Not assessed')}</p>
+                    {f"<p><strong>Comments:</strong> {hypo.get('comments', 'No comments')}</p>" if hypo.get('comments') else ""}
+                </div>
+                """
+                
+        elif step_name in ['ranking', 'ranking_final']:
+            hypotheses = step_data.get('hypotheses', [])
+            if hypotheses:
+                # Sort by Elo score
+                sorted_hypotheses = sorted(hypotheses, key=lambda h: h.get('elo_score', 0), reverse=True)
+                html += f"<p><strong>Ranking results ({len(hypotheses)} hypotheses):</strong></p>"
+                html += "<ol>"
+                for hypo in sorted_hypotheses:
+                    html += f"""
+                    <li style="margin: 5px 0;">
+                        <strong>{hypo.get('title', 'Untitled')}</strong> (ID: {hypo.get('id', 'Unknown')}) 
+                        - Elo: {hypo.get('elo_score', 0):.2f}
+                    </li>
+                    """
+                html += "</ol>"
+                
+        elif step_name == 'evolution':
+            hypotheses = step_data.get('hypotheses', [])
+            html += f"<p><strong>Evolved {len(hypotheses)} new hypotheses by combining top performers:</strong></p>"
+            for hypo in hypotheses:
+                html += f"""
+                <div style="border-left: 3px solid #ffc107; padding-left: 10px; margin: 10px 0;">
+                    <h5>{hypo.get('title', 'Untitled')} (ID: {hypo.get('id', 'Unknown')})</h5>
+                    <p>{hypo.get('text', 'No description')}</p>
+                </div>
+                """
+                
+        elif step_name == 'proximity':
+            adjacency_graph = step_data.get('adjacency_graph', {})
+            nodes_str = step_data.get('nodes_str', '')
+            edges_str = step_data.get('edges_str', '')
+            
+            if adjacency_graph:
+                num_hypotheses = len(adjacency_graph)
+                html += f"<p><strong>Similarity Analysis:</strong></p>"
+                html += f"<p>Analyzed relationships between {num_hypotheses} hypotheses</p>"
+                
+                # Calculate and display average similarity
+                all_similarities = []
+                for hypo_id, connections in adjacency_graph.items():
+                    for conn in connections:
+                        all_similarities.append(conn.get('similarity', 0))
+                
+                if all_similarities:
+                    avg_sim = sum(all_similarities) / len(all_similarities)
+                    html += f"<p>Average similarity: {avg_sim:.3f}</p>"
+                    html += f"<p>Total connections analyzed: {len(all_similarities)}</p>"
+                
+                # Interactive Graph Visualization
+                if nodes_str and edges_str:
+                    graph_id = f"graph_{int(time.time() * 1000)}"  # Unique ID for this graph
+                    html += f"""
+                    <h6>Interactive Similarity Graph:</h6>
+                    <div style="margin: 15px 0;">
+                        <p><em>Each node represents a hypothesis. Lines show similarity scores (only > 0.2 shown). Click and drag to explore!</em></p>
+                        <div id="{graph_id}" style="width: 100%; height: 400px; border: 1px solid #ccc; background-color: #fafafa;"></div>
+                    </div>
+                    
+                    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+                    <script type="text/javascript">
+                        (function() {{
+                            // Wait for vis.js to load
+                            function initGraph() {{
+                                if (typeof vis === 'undefined') {{
+                                    setTimeout(initGraph, 100);
+                                    return;
+                                }}
+                                
+                                var nodes = new vis.DataSet([{nodes_str}]);
+                                var edges = new vis.DataSet([{edges_str}]);
+                                
+                                var container = document.getElementById('{graph_id}');
+                                if (!container) {{
+                                    console.error('Graph container not found: {graph_id}');
+                                    return;
+                                }}
+                                
+                                var data = {{
+                                    nodes: nodes,
+                                    edges: edges
+                                }};
+                                
+                                var options = {{
+                                    nodes: {{
+                                        shape: 'circle',
+                                        font: {{ size: 14 }},
+                                        color: {{
+                                            background: '#97C2FC',
+                                            border: '#2B7CE9',
+                                            highlight: {{
+                                                background: '#D2E5FF',
+                                                border: '#2B7CE9'
+                                            }}
+                                        }}
+                                    }},
+                                    edges: {{
+                                        font: {{ size: 12, align: 'middle' }},
+                                        color: {{ color: '#848484' }},
+                                        smooth: {{
+                                            enabled: true,
+                                            type: "dynamic"
+                                        }}
+                                    }},
+                                    physics: {{
+                                        stabilization: true,
+                                        barnesHut: {{
+                                            gravitationalConstant: -2000,
+                                            centralGravity: 0.3,
+                                            springLength: 150,
+                                            springConstant: 0.04
+                                        }}
+                                    }},
+                                    interaction: {{
+                                        hover: true,
+                                        tooltipDelay: 200
+                                    }}
+                                }};
+                                
+                                try {{
+                                    var network = new vis.Network(container, data, options);
+                                    
+                                    // Add click event for node information
+                                    network.on("click", function (params) {{
+                                        if (params.nodes.length > 0) {{
+                                            var nodeId = params.nodes[0];
+                                            console.log('Clicked node:', nodeId);
+                                        }}
+                                    }});
+                                    
+                                }} catch (error) {{
+                                    console.error('Error creating network graph:', error);
+                                    container.innerHTML = '<p style="padding: 20px; text-align: center; color: #666;">Error loading graph visualization</p>';
+                                }}
+                            }}
+                            
+                            initGraph();
+                        }})();
+                    </script>
+                    """
+                
+                # Show top similar pairs
+                similarity_pairs = []
+                for hypo_id, connections in adjacency_graph.items():
+                    for conn in connections:
+                        similarity_pairs.append((hypo_id, conn.get('other_id'), conn.get('similarity', 0)))
+                
+                # Sort by similarity and show top 5
+                similarity_pairs.sort(key=lambda x: x[2], reverse=True)
+                if similarity_pairs:
+                    html += "<h6>Top Similar Hypothesis Pairs:</h6><ul>"
+                    for i, (id1, id2, sim) in enumerate(similarity_pairs[:5]):
+                        html += f"<li>{id1} ↔ {id2}: {sim:.3f}</li>"
+                    html += "</ul>"
+            else:
+                html += "<p>No proximity data available.</p>"
+                    
+        elif step_name == 'meta_review':
+            meta_review = step_data.get('meta_review', {})
+            if meta_review.get('meta_review_critique'):
+                html += "<h5>Critique:</h5><ul>"
+                for critique in meta_review['meta_review_critique']:
+                    html += f"<li>{critique}</li>"
+                html += "</ul>"
+            
+            if meta_review.get('research_overview', {}).get('suggested_next_steps'):
+                html += "<h5>Suggested Next Steps:</h5><ul>"
+                for step in meta_review['research_overview']['suggested_next_steps']:
+                    html += f"<li>{step}</li>"
+                html += "</ul>"
+        
+        # Add timing information if available
+        if step_data.get('duration'):
+            html += f"<p><em>Duration: {step_data['duration']:.2f}s</em></p>"
+            
+        html += "</div></details>"
+    
+    # Final summary section - always expanded
     all_hypotheses = []
-    for step_name, step_data in cycle_details.get('steps', {}).items():
+    for step_name, step_data in steps.items():
         if step_data.get('hypotheses'):
             all_hypotheses.extend(step_data['hypotheses'])
     
@@ -186,10 +399,15 @@ def format_cycle_results(cycle_details: Dict) -> str:
         # Sort by Elo score
         all_hypotheses.sort(key=lambda h: h.get('elo_score', 0), reverse=True)
         
-        html += "<h3>🧠 Top Hypotheses</h3>"
+        html += """
+        <div style="margin: 20px 0; padding: 15px; border: 2px solid #28a745; border-radius: 8px; background-color: #f8fff8;">
+            <h3>🏆 Final Rankings - Top Hypotheses</h3>
+        """
+        
         for i, hypo in enumerate(all_hypotheses[:10]):  # Show top 10
+            rank_color = "#28a745" if i < 3 else "#17a2b8" if i < 6 else "#6c757d"
             html += f"""
-            <div style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 8px; background-color: #f9f9f9;">
+            <div style="border-left: 4px solid {rank_color}; padding: 15px; margin: 10px 0; background-color: white; border-radius: 5px;">
                 <h4>#{i+1}: {hypo.get('title', 'Untitled')}</h4>
                 <p><strong>ID:</strong> {hypo.get('id', 'Unknown')} | 
                    <strong>Elo Score:</strong> {hypo.get('elo_score', 0):.2f}</p>
@@ -198,6 +416,8 @@ def format_cycle_results(cycle_details: Dict) -> str:
                    <strong>Feasibility:</strong> {hypo.get('feasibility_review', 'Not assessed')}</p>
             </div>
             """
+        
+        html += "</div>"
     
     return html
 
