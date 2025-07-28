@@ -266,27 +266,6 @@ def format_cycle_results(cycle_details: Dict) -> str:
                     html += f"<p>Average similarity: {avg_sim:.3f}</p>"
                     html += f"<p>Total connections analyzed: {len(all_similarities)}</p>"
                 
-                # Interactive Graph Visualization
-                import json as _json
-                nodes_json = _json.dumps(nodes)
-                edges_json = _json.dumps(edges)
-                
-                logger.info(f"Nodes JSON: {nodes_json[:200]}...") # Log first 200 chars
-                logger.info(f"Edges JSON: {edges_json[:200]}...") # Log first 200 chars
-                
-                graph_id = f"graph_{int(time.time() * 1000)}"  # Unique ID for this graph
-                html += f"""
-                <h6>Interactive Similarity Graph:</h6>
-                <div style="margin: 15px 0;">
-                    <p><em>Each node represents a hypothesis. Lines show similarity scores (only &gt; 0.2 shown). Click and drag to explore!</em></p>
-                    <div id="{graph_id}" style="width: 100%; height: 400px; border: 1px solid #ccc; background-color: #fafafa;"></div>
-                </div>
-                
-                <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-                <div id="{graph_id}" class="vis-graph-container" style="width: 100%; height: 400px; border: 1px solid #ccc; background-color: #fafafa;" data-nodes='{nodes_json}' data-edges='{edges_json}'></div>
-                <script src="/file=static/js/graph_renderer.js"></script>
-                """
-                
                 # Show top similar pairs
                 similarity_pairs = []
                 for hypo_id, connections in adjacency_graph.items():
@@ -300,8 +279,8 @@ def format_cycle_results(cycle_details: Dict) -> str:
                     for i, (id1, id2, sim) in enumerate(similarity_pairs[:5]):
                         html += f"<li>{id1} ↔ {id2}: {sim:.3f}</li>"
                     html += "</ul>"
-            else:
-                html += "<p>No proximity data available.</p>"
+                else:
+                    html += "<p>No proximity data available.</p>"
                     
         elif step_name == 'meta_review':
             meta_review = step_data.get('meta_review', {})
