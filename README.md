@@ -64,11 +64,21 @@ This project implements a multi-agent system within the `app` package that itera
     pip install -r requirements.txt
     ```
     (This includes `fastapi`, `uvicorn`, `openai`, `requests`, `sentence-transformers`, `scikit-learn`, `torch`, `numpy`, `PyYAML`).
-3.  **Set Environment Variable:**
-    Obtain an API key from OpenRouter ([https://openrouter.ai/](https://openrouter.ai/)) and set it as an environment variable:
+3.  **Set Up OpenRouter API Key:**
+    **Important:** You need an OpenRouter API key with sufficient balance to use this system.
+    
+    a. **Get API Key:** Sign up at [https://openrouter.ai/](https://openrouter.ai/) and obtain an API key
+    
+    b. **Add Initial Balance:** **CRITICAL** - Add at least $5 to your OpenRouter account balance. Without sufficient funds, the system will fail to generate hypotheses and you'll see "insufficient funds" errors in the terminal.
+    
+    c. **Set Environment Variable:**
     ```bash
     export OPENROUTER_API_KEY=your_api_key
     ```
+    
+    **Note:** The system uses LLM API calls for hypothesis generation, review, and ranking. Each research cycle typically costs $0.10-$0.50 depending on the model and number of hypotheses generated.
+
+    There are free models available too from openrouter. 
 4.  **Run the Application:**
     ```bash
     # Use the Makefile (default target runs uvicorn)
