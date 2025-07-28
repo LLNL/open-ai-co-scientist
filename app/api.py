@@ -14,7 +14,7 @@ from .models import (
     ArxivSearchRequest, ArxivSearchResponse, ArxivPaper, ArxivTrendsResponse
 )
 from .agents import SupervisorAgent
-from .utils import logger # Use the configured logger
+from .utils import logger, is_huggingface_space, get_deployment_environment # Use the configured logger
 from .tools.arxiv_search import ArxivSearchTool, get_categories_for_field
 # from .config import config # Config might be needed if endpoints use it directly
 
@@ -35,23 +35,57 @@ available_models: List[str] = [] # Global list to store model IDs
 async def fetch_available_models():
     """Fetches available models from OpenRouter on startup."""
     global available_models
+    
+    # Detect deployment environment
+    deployment_env = get_deployment_environment()
+    is_hf_spaces = is_huggingface_space()
+    
+    logger.info(f"Detected deployment environment: {deployment_env}")
+    logger.info(f"Is Hugging Face Spaces: {is_hf_spaces}")
     logger.info("Fetching available models from OpenRouter...")
+    
+    # Define cost-effective models for production deployment
+    ALLOWED_MODELS_PRODUCTION = [
+        "google/gemini-2.0-flash-001",
+        "google/gemini-flash-1.5",
+        "openai/gpt-3.5-turbo",
+        "anthropic/claude-3-haiku",
+        "meta-llama/llama-3.1-8b-instruct",
+        "mistralai/mistral-7b-instruct",
+        "microsoft/phi-3-mini-4k-instruct"
+    ]
+    
     try:
-        response = requests.get("https://openrouter.ai/api/v1/models", timeout=10) # Added timeout
-        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        response = requests.get("https://openrouter.ai/api/v1/models", timeout=10)
+        response.raise_for_status()
         models_data = response.json().get("data", [])
-        # Extract model IDs, maybe filter/sort later
-        # For now, just get all IDs
-        available_models = sorted([model.get("id") for model in models_data if model.get("id")])
-        logger.info(f"Successfully fetched {len(available_models)} models.")
-        # Log the actual list for confirmation
-        logger.info(f"Available models list (first 10): {available_models[:10]}")
+        
+        # Extract all model IDs
+        all_models = sorted([model.get("id") for model in models_data if model.get("id")])
+        
+        # Apply filtering based on environment
+        if is_hf_spaces:
+            # Filter to only cost-effective models in HF Spaces
+            available_models = [model for model in all_models if model in ALLOWED_MODELS_PRODUCTION]
+            logger.info(f"Hugging Face Spaces: Filtered to {len(available_models)} cost-effective models")
+            logger.info(f"Allowed models: {available_models}")
+        else:
+            # Use all models in local/development environment
+            available_models = all_models
+            logger.info(f"Local/Development: Using all {len(available_models)} models")
+            logger.info(f"Available models list (first 10): {available_models[:10]}")
+            
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to fetch models from OpenRouter: {e}")
-        available_models = [] # Ensure it's an empty list on failure
+        # Fallback to safe defaults in production
+        if is_hf_spaces:
+            available_models = ALLOWED_MODELS_PRODUCTION
+            logger.info(f"Using fallback production models: {available_models}")
+        else:
+            available_models = []
     except Exception as e:
         logger.error(f"An unexpected error occurred during model fetching: {e}", exc_info=True)
-        available_models = []
+        available_models = ALLOWED_MODELS_PRODUCTION if is_hf_spaces else []
 
 
 # --- Static Files ---
@@ -159,6 +193,19 @@ def list_hypotheses_endpoint():
     active_hypotheses = global_context.get_active_hypotheses()
     logger.info(f"Retrieving {len(active_hypotheses)} active hypotheses.")
     return [HypothesisResponse(**h.to_dict()) for h in active_hypotheses]
+
+@app.get("/deployment_status")
+def get_deployment_status():
+    """Returns the current deployment environment status."""
+    deployment_env = get_deployment_environment()
+    is_hf_spaces = is_huggingface_space()
+    
+    return {
+        "environment": deployment_env,
+        "is_huggingface_spaces": is_hf_spaces,
+        "models_filtered": is_hf_spaces,
+        "available_models_count": len(available_models)
+    }
 
 @app.post("/log_frontend_error")
 def log_frontend_error(log_data: Dict):
@@ -721,6 +768,10 @@ async def root_endpoint():
         </style>
     </head>
     <body>
+        <div id="deployment-status" style="background-color: #e8f4fd; border: 1px solid #bee5eb; padding: 10px; margin-bottom: 20px; border-radius: 5px; font-size: 14px;">
+            <strong>🔧 Deployment Status:</strong> <span id="deployment-info">Loading...</span>
+        </div>
+        
         <h1>Welcome to the AI Co-Scientist System</h1>
         <p>Set your research goal and run cycles to generate hypotheses.</p>
 
@@ -1246,8 +1297,45 @@ async def root_endpoint():
                 }
             }
 
-            // Populate dropdown when the page loads
-            document.addEventListener('DOMContentLoaded', populateModelDropdown);
+            // Function to fetch and display deployment status
+            async function fetchDeploymentStatus() {
+                try {
+                    const response = await fetch('/deployment_status');
+                    if (response.ok) {
+                        const status = await response.json();
+                        const deploymentInfo = document.getElementById('deployment-info');
+                        
+                        let statusText = `Running in ${status.environment}`;
+                        let statusColor = '#e8f4fd'; // Default blue
+                        
+                        if (status.is_huggingface_spaces) {
+                            statusText += ` | Models filtered for cost control (${status.available_models_count} available)`;
+                            statusColor = '#fff3cd'; // Yellow for production
+                            document.getElementById('deployment-status').style.backgroundColor = statusColor;
+                            document.getElementById('deployment-status').style.borderColor = '#ffeaa7';
+                        } else {
+                            statusText += ` | All models available (${status.available_models_count} total)`;
+                            statusColor = '#d1ecf1'; // Light blue for development
+                            document.getElementById('deployment-status').style.backgroundColor = statusColor;
+                            document.getElementById('deployment-status').style.borderColor = '#bee5eb';
+                        }
+                        
+                        deploymentInfo.textContent = statusText;
+                        console.log('Deployment status loaded:', status);
+                    } else {
+                        document.getElementById('deployment-info').textContent = 'Unable to determine deployment status';
+                    }
+                } catch (error) {
+                    console.error('Error fetching deployment status:', error);
+                    document.getElementById('deployment-info').textContent = 'Error loading deployment status';
+                }
+            }
+
+            // Populate dropdown and fetch deployment status when the page loads
+            document.addEventListener('DOMContentLoaded', function() {
+                populateModelDropdown();
+                fetchDeploymentStatus();
+            });
 
 
             function initializeGraph(nodesStr, edgesStr) {

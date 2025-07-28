@@ -84,6 +84,46 @@ def call_llm(prompt: str, temperature: float = 0.7) -> str:
     return f"Error: {last_error_message}" # Return the last recorded error
 
 
+# --- Environment Detection ---
+def is_huggingface_space() -> bool:
+    """
+    Detect if the application is running in Hugging Face Spaces.
+    Returns True if running in HF Spaces, False otherwise.
+    """
+    # Primary indicators - HF Spaces sets these environment variables
+    hf_env_vars = [
+        "SPACE_ID",
+        "SPACE_AUTHOR_NAME", 
+        "SPACES_BUILDKIT_VERSION",
+        "HF_HOME"
+    ]
+    
+    for var in hf_env_vars:
+        if os.getenv(var):
+            logger.info(f"Detected Hugging Face Spaces environment via {var}")
+            return True
+    
+    # Secondary indicator - hostname patterns
+    hostname = os.getenv("HOSTNAME", "")
+    if "huggingface.co" in hostname.lower():
+        logger.info(f"Detected Hugging Face Spaces environment via hostname: {hostname}")
+        return True
+    
+    return False
+
+def get_deployment_environment() -> str:
+    """
+    Get a string description of the current deployment environment.
+    Returns: 'Hugging Face Spaces', 'Local Development', or 'Unknown'
+    """
+    if is_huggingface_space():
+        return "Hugging Face Spaces"
+    elif os.getenv("LOCAL_DEV") or not os.getenv("PORT"):
+        return "Local Development"
+    else:
+        return "Unknown"
+
+
 # --- ID Generation ---
 def generate_unique_id(prefix="H") -> str:
     """Generates a unique identifier string."""
