@@ -1,3 +1,18 @@
+---
+title: Ai Co Scientist
+emoji: 📊
+colorFrom: gray
+colorTo: gray
+sdk: gradio
+sdk_version: 5.38.2
+app_file: app.py
+pinned: false
+license: mit
+short_description: open-source implementation of Google's AI co-scientist syste
+---
+
+Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
+
 # AI Co-Scientist - Hypothesis Evolution System (v1)
 
 This project implements an AI-powered system for generating, reviewing, ranking, and evolving research hypotheses. It leverages Large Language Models (LLMs) for various tasks, including hypothesis generation, reflection, and comparison. The system is designed to assist researchers in exploring a research space and identifying promising hypotheses.
@@ -295,4 +310,19 @@ Suggested Next Steps:
     *   **Novelty:**  An assessment of the hypothesis's originality (HIGH, MEDIUM, LOW).
     *   **Feasibility:** An assessment of the hypothesis's practicality (HIGH, MEDIUM, LOW).
 *   **Combined Hypotheses:** Displays hypotheses that have been created by combining top-ranked hypotheses from previous cycles.
-*   **Suggested Next Steps:**  Recommendations for future research directions.
+*   **Suggested Next Steps:**  Recommendations for future research directions.<environment_details>
+# VSCode Visible Files
+(No visible files)
+
+# VSCode Open Tabs
+(No open tabs)
+
+# Current Time
+7/28/2025, 4:14:45 PM (America/Los_Angeles, UTC-7:00)
+
+# Context Window Usage
+162,325 / 1,048.576K tokens used (15%)
+
+# Current Mode
+ACT MODE
+</environment_details>
