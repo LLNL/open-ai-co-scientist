@@ -242,8 +242,13 @@ def format_cycle_results(cycle_details: Dict) -> str:
                 
         elif step_name == 'proximity':
             adjacency_graph = step_data.get('adjacency_graph', {})
-            nodes_str = step_data.get('nodes_str', '')
-            edges_str = step_data.get('edges_str', '')
+            nodes = step_data.get('nodes', [])
+            edges = step_data.get('edges', [])
+            
+            # Debug logging
+            logger.info(f"Proximity data - adjacency_graph keys: {list(adjacency_graph.keys()) if adjacency_graph else 'None'}")
+            logger.info(f"Proximity data - nodes count: {len(nodes) if nodes else 0}")
+            logger.info(f"Proximity data - edges count: {len(edges) if edges else 0}")
             
             if adjacency_graph:
                 num_hypotheses = len(adjacency_graph)
@@ -262,96 +267,25 @@ def format_cycle_results(cycle_details: Dict) -> str:
                     html += f"<p>Total connections analyzed: {len(all_similarities)}</p>"
                 
                 # Interactive Graph Visualization
-                if nodes_str and edges_str:
-                    graph_id = f"graph_{int(time.time() * 1000)}"  # Unique ID for this graph
-                    html += f"""
-                    <h6>Interactive Similarity Graph:</h6>
-                    <div style="margin: 15px 0;">
-                        <p><em>Each node represents a hypothesis. Lines show similarity scores (only > 0.2 shown). Click and drag to explore!</em></p>
-                        <div id="{graph_id}" style="width: 100%; height: 400px; border: 1px solid #ccc; background-color: #fafafa;"></div>
-                    </div>
-                    
-                    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-                    <script type="text/javascript">
-                        (function() {{
-                            // Wait for vis.js to load
-                            function initGraph() {{
-                                if (typeof vis === 'undefined') {{
-                                    setTimeout(initGraph, 100);
-                                    return;
-                                }}
-                                
-                                var nodes = new vis.DataSet([{nodes_str}]);
-                                var edges = new vis.DataSet([{edges_str}]);
-                                
-                                var container = document.getElementById('{graph_id}');
-                                if (!container) {{
-                                    console.error('Graph container not found: {graph_id}');
-                                    return;
-                                }}
-                                
-                                var data = {{
-                                    nodes: nodes,
-                                    edges: edges
-                                }};
-                                
-                                var options = {{
-                                    nodes: {{
-                                        shape: 'circle',
-                                        font: {{ size: 14 }},
-                                        color: {{
-                                            background: '#97C2FC',
-                                            border: '#2B7CE9',
-                                            highlight: {{
-                                                background: '#D2E5FF',
-                                                border: '#2B7CE9'
-                                            }}
-                                        }}
-                                    }},
-                                    edges: {{
-                                        font: {{ size: 12, align: 'middle' }},
-                                        color: {{ color: '#848484' }},
-                                        smooth: {{
-                                            enabled: true,
-                                            type: "dynamic"
-                                        }}
-                                    }},
-                                    physics: {{
-                                        stabilization: true,
-                                        barnesHut: {{
-                                            gravitationalConstant: -2000,
-                                            centralGravity: 0.3,
-                                            springLength: 150,
-                                            springConstant: 0.04
-                                        }}
-                                    }},
-                                    interaction: {{
-                                        hover: true,
-                                        tooltipDelay: 200
-                                    }}
-                                }};
-                                
-                                try {{
-                                    var network = new vis.Network(container, data, options);
-                                    
-                                    // Add click event for node information
-                                    network.on("click", function (params) {{
-                                        if (params.nodes.length > 0) {{
-                                            var nodeId = params.nodes[0];
-                                            console.log('Clicked node:', nodeId);
-                                        }}
-                                    }});
-                                    
-                                }} catch (error) {{
-                                    console.error('Error creating network graph:', error);
-                                    container.innerHTML = '<p style="padding: 20px; text-align: center; color: #666;">Error loading graph visualization</p>';
-                                }}
-                            }}
-                            
-                            initGraph();
-                        }})();
-                    </script>
-                    """
+                import json as _json
+                nodes_json = _json.dumps(nodes)
+                edges_json = _json.dumps(edges)
+                
+                logger.info(f"Nodes JSON: {nodes_json[:200]}...") # Log first 200 chars
+                logger.info(f"Edges JSON: {edges_json[:200]}...") # Log first 200 chars
+                
+                graph_id = f"graph_{int(time.time() * 1000)}"  # Unique ID for this graph
+                html += f"""
+                <h6>Interactive Similarity Graph:</h6>
+                <div style="margin: 15px 0;">
+                    <p><em>Each node represents a hypothesis. Lines show similarity scores (only &gt; 0.2 shown). Click and drag to explore!</em></p>
+                    <div id="{graph_id}" style="width: 100%; height: 400px; border: 1px solid #ccc; background-color: #fafafa;"></div>
+                </div>
+                
+                <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+                <div id="{graph_id}" class="vis-graph-container" style="width: 100%; height: 400px; border: 1px solid #ccc; background-color: #fafafa;" data-nodes='{nodes_json}' data-edges='{edges_json}'></div>
+                <script src="/file=static/js/graph_renderer.js"></script>
+                """
                 
                 # Show top similar pairs
                 similarity_pairs = []
