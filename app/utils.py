@@ -131,37 +131,36 @@ def generate_unique_id(prefix="H") -> str:
 
 
 # --- VIS.JS Graph Data Generation ---
-def generate_visjs_data(adjacency_graph: Dict) -> Dict[str, str]:
-    """Generates node and edge data strings for vis.js graph."""
+def generate_visjs_data(adjacency_graph: Dict) -> Dict[str, list]:
+    """Generates node and edge data lists for vis.js graph (for JSON serialization)."""
     nodes = []
     edges = []
 
     if not isinstance(adjacency_graph, dict):
         logger.error(f"Invalid adjacency_graph type: {type(adjacency_graph)}. Expected dict.")
-        return {"nodes_str": "", "edges_str": ""}
+        return {"nodes": [], "edges": []}
 
     for node_id, connections in adjacency_graph.items():
-        nodes.append(f"{{id: '{node_id}', label: '{node_id}'}}")
+        nodes.append({"id": node_id, "label": node_id})
         if isinstance(connections, list):
             for connection in connections:
                 if isinstance(connection, dict) and 'similarity' in connection and 'other_id' in connection:
                     similarity_val = connection.get('similarity')
                     if isinstance(similarity_val, (int, float)) and similarity_val > 0.2:
-                        edges.append(f"{{from: '{node_id}', to: '{connection['other_id']}', label: '{similarity_val:.2f}', arrows: 'to'}}")
-                    # Optional: Log skipped edges due to low similarity
-                    # else:
-                    #     logger.debug(f"Skipping edge from {node_id} to {connection['other_id']} due to low/invalid similarity: {similarity_val}")
+                        edges.append({
+                            "from": node_id,
+                            "to": connection['other_id'],
+                            "label": f"{similarity_val:.2f}",
+                            "arrows": "to"
+                        })
                 else:
                     logger.warning(f"Skipping invalid connection format for node {node_id}: {connection}")
         else:
-             logger.warning(f"Skipping invalid connections format for node {node_id}: {connections}")
-
-    nodes_str = ",\n".join(nodes)
-    edges_str = ",\n".join(edges)
+            logger.warning(f"Skipping invalid connections format for node {node_id}: {connections}")
 
     return {
-        "nodes_str": nodes_str,
-        "edges_str": edges_str
+        "nodes": nodes,
+        "edges": edges
     }
 
 # --- Similarity Calculation ---

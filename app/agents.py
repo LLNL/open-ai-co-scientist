@@ -296,7 +296,7 @@ class ProximityAgent:
         adjacency = {}
         if not active_hypotheses:
             logger.info("No active hypotheses to build proximity graph.")
-            return {"adjacency_graph": {}, "nodes_str": "", "edges_str": ""}
+            return {"adjacency_graph": {}, "nodes": [], "edges": []}
 
         for i in range(len(active_hypotheses)):
             hypo_i = active_hypotheses[i]
@@ -318,8 +318,8 @@ class ProximityAgent:
         logger.info("Built proximity graph adjacency with %d nodes.", len(active_hypotheses))
         return {
             "adjacency_graph": adjacency,
-            "nodes_str": visjs_data["nodes_str"],
-            "edges_str": visjs_data["edges_str"]
+            "nodes": visjs_data["nodes"],
+            "edges": visjs_data["edges"]
         }
 
 class MetaReviewAgent:
@@ -418,8 +418,8 @@ class SupervisorAgent:
         proximity_result = self.proximity_agent.build_proximity_graph(context) # Pass context
         cycle_details["steps"]["proximity"] = {
             "adjacency_graph": proximity_result["adjacency_graph"],
-            "nodes_str": proximity_result["nodes_str"],
-            "edges_str": proximity_result["edges_str"]
+            "nodes": proximity_result["nodes"],
+            "edges": proximity_result["edges"]
         }
 
         # 7. Meta-review
