@@ -555,6 +555,8 @@ def create_gradio_interface():
                 - Higher generation temperature = more creative ideas
                 - Lower reflection temperature = more analytical reviews
                 - Each cycle builds on previous results
+                
+                **Note:** Since it uses the free version of Gemini, it may occasionally return zero hypotheses if rate limits are reached. Please try again in this case.
                 """)
         
         # Results section
