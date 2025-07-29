@@ -65,9 +65,9 @@ async def fetch_available_models():
         
         # Apply filtering based on environment
         if is_hf_spaces:
-            # Filter to only cost-effective models in HF Spaces
-            available_models = [model for model in all_models if model in ALLOWED_MODELS_PRODUCTION]
-            logger.info(f"Hugging Face Spaces: Filtered to {len(available_models)} cost-effective models")
+            # Filter to only models with ":free" in their name for Hugging Face Spaces
+            available_models = [model for model in all_models if ":free" in model]
+            logger.info(f"Hugging Face Spaces: Filtered to {len(available_models)} free models")
             logger.info(f"Allowed models: {available_models}")
         else:
             # Use all models in local/development environment
@@ -79,8 +79,11 @@ async def fetch_available_models():
         logger.error(f"Failed to fetch models from OpenRouter: {e}")
         # Fallback to safe defaults in production
         if is_hf_spaces:
-            available_models = ALLOWED_MODELS_PRODUCTION
-            logger.info(f"Using fallback production models: {available_models}")
+            # Fallback to any models containing ":free" if fetching fails in HF Spaces
+            available_models = [model for model in all_models if ":free" in model] # Use all_models from previous successful fetch if available
+            if not available_models: # If all_models was empty or no free models found
+                available_models = ["google/gemini-2.0-flash-001:free"] # A known free model as last resort
+            logger.info(f"Using fallback free models: {available_models}")
         else:
             available_models = []
     except Exception as e:
