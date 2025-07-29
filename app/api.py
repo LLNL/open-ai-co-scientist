@@ -44,17 +44,6 @@ async def fetch_available_models():
     logger.info(f"Is Hugging Face Spaces: {is_hf_spaces}")
     logger.info("Fetching available models from OpenRouter...")
     
-    # Define cost-effective models for production deployment
-    ALLOWED_MODELS_PRODUCTION = [
-        "google/gemini-2.0-flash-001",
-        "google/gemini-flash-1.5",
-        "openai/gpt-3.5-turbo",
-        "anthropic/claude-3-haiku",
-        "meta-llama/llama-3.1-8b-instruct",
-        "mistralai/mistral-7b-instruct",
-        "microsoft/phi-3-mini-4k-instruct"
-    ]
-    
     try:
         response = requests.get("https://openrouter.ai/api/v1/models", timeout=10)
         response.raise_for_status()
