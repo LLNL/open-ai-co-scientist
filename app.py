@@ -8,7 +8,7 @@ import logging
 # Import the existing app components
 from app.models import ResearchGoal, ContextMemory
 from app.agents import SupervisorAgent
-from app.utils import logger, is_huggingface_space, get_deployment_environment
+from app.utils import logger, is_huggingface_space, get_deployment_environment, filter_free_models
 from app.tools.arxiv_search import ArxivSearchTool
 import requests
 
@@ -32,17 +32,6 @@ def fetch_available_models():
     logger.info(f"Detected deployment environment: {deployment_env}")
     logger.info(f"Is Hugging Face Spaces: {is_hf_spaces}")
     
-    # Define cost-effective models for production deployment
-    ALLOWED_MODELS_PRODUCTION = [
-        "google/gemini-2.0-flash-001",
-        "google/gemini-flash-1.5",
-        "openai/gpt-3.5-turbo",
-        "anthropic/claude-3-haiku",
-        "meta-llama/llama-3.1-8b-instruct",
-        "mistralai/mistral-7b-instruct",
-        "microsoft/phi-3-mini-4k-instruct"
-    ]
-    
     try:
         response = requests.get("https://openrouter.ai/api/v1/models", timeout=10)
         response.raise_for_status()
@@ -51,11 +40,14 @@ def fetch_available_models():
         # Extract all model IDs
         all_models = sorted([model.get("id") for model in models_data if model.get("id")])
         
+        # Create filtered free models list
+        free_models = filter_free_models(all_models)
+        
         # Apply filtering based on environment
         if is_hf_spaces:
-            # Filter to only cost-effective models in HF Spaces
-            available_models = [model for model in all_models if model in ALLOWED_MODELS_PRODUCTION]
-            logger.info(f"Hugging Face Spaces: Filtered to {len(available_models)} cost-effective models")
+            # Use only free models for Hugging Face Spaces
+            available_models = free_models
+            logger.info(f"Hugging Face Spaces: Filtered to {len(available_models)} free models")
         else:
             # Use all models in local/development environment
             available_models = all_models
@@ -64,7 +56,11 @@ def fetch_available_models():
     except Exception as e:
         logger.error(f"Failed to fetch models from OpenRouter: {e}")
         # Fallback to safe defaults
-        available_models = ALLOWED_MODELS_PRODUCTION if is_hf_spaces else ["google/gemini-2.0-flash-001"]
+        if is_hf_spaces:
+            # Use a known free model as fallback
+            available_models = ["google/gemini-2.0-flash-001:free"]
+        else:
+            available_models = ["google/gemini-2.0-flash-001"]
     
     return available_models
 
