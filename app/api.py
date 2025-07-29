@@ -14,7 +14,7 @@ from .models import (
     ArxivSearchRequest, ArxivSearchResponse, ArxivPaper, ArxivTrendsResponse
 )
 from .agents import SupervisorAgent
-from .utils import logger, is_huggingface_space, get_deployment_environment # Use the configured logger
+from .utils import logger, is_huggingface_space, get_deployment_environment, filter_free_models # Use the configured logger
 from .tools.arxiv_search import ArxivSearchTool, get_categories_for_field
 # from .config import config # Config might be needed if endpoints use it directly
 
@@ -63,10 +63,13 @@ async def fetch_available_models():
         # Extract all model IDs
         all_models = sorted([model.get("id") for model in models_data if model.get("id")])
         
+        # Create filtered free models list
+        free_models = filter_free_models(all_models)
+        
         # Apply filtering based on environment
         if is_hf_spaces:
-            # Filter to only models with ":free" in their name for Hugging Face Spaces
-            available_models = [model for model in all_models if ":free" in model]
+            # Use only free models for Hugging Face Spaces
+            available_models = free_models
             logger.info(f"Hugging Face Spaces: Filtered to {len(available_models)} free models")
             logger.info(f"Allowed models: {available_models}")
         else:
@@ -80,7 +83,7 @@ async def fetch_available_models():
         # Fallback to safe defaults in production
         if is_hf_spaces:
             # Fallback to any models containing ":free" if fetching fails in HF Spaces
-            available_models = [model for model in all_models if ":free" in model] # Use all_models from previous successful fetch if available
+            available_models = filter_free_models(all_models) # Use all_models from previous successful fetch if available
             if not available_models: # If all_models was empty or no free models found
                 available_models = ["google/gemini-2.0-flash-001:free"] # A known free model as last resort
             logger.info(f"Using fallback free models: {available_models}")
@@ -88,7 +91,11 @@ async def fetch_available_models():
             available_models = []
     except Exception as e:
         logger.error(f"An unexpected error occurred during model fetching: {e}", exc_info=True)
-        available_models = ALLOWED_MODELS_PRODUCTION if is_hf_spaces else []
+        if is_hf_spaces:
+            # Use a known free model as fallback
+            available_models = ["google/gemini-2.0-flash-001:free"]
+        else:
+            available_models = []
 
 
 # --- Static Files ---
@@ -1312,7 +1319,7 @@ async def root_endpoint():
                         let statusColor = '#e8f4fd'; // Default blue
                         
                         if (status.is_huggingface_spaces) {
-                            statusText += ` | Models filtered for cost control (${status.available_models_count} available)`;
+                            statusText += ` | ${status.available_models_count} free models available`;
                             statusColor = '#fff3cd'; // Yellow for production
                             document.getElementById('deployment-status').style.backgroundColor = statusColor;
                             document.getElementById('deployment-status').style.borderColor = '#ffeaa7';
