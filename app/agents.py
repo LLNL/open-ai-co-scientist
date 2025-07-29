@@ -405,10 +405,12 @@ class SupervisorAgent:
                 context.add_hypothesis(eh)
             logger.info("Step 4a: Reviewing Evolved Hypotheses")
             self.reflection_agent.review_hypotheses(evolved_hypotheses, context, research_goal) # Pass research_goal
-            # Add explicit step for reviewing evolved hypotheses
-            cycle_details["steps"]["reflection_evolved"] = {"hypotheses": [h.to_dict() for h in evolved_hypotheses]}
             active_hypos = context.get_active_hypotheses() # Update active list
-        cycle_details["steps"]["evolution"] = {"hypotheses": [h.to_dict() for h in evolved_hypotheses]}
+            cycle_details["steps"]["evolution"] = {"hypotheses": [h.to_dict() for h in evolved_hypotheses]}
+            # Add explicit step for reviewing evolved hypotheses AFTER evolution
+            cycle_details["steps"]["reflection_evolved"] = {"hypotheses": [h.to_dict() for h in evolved_hypotheses]}
+        else:
+            cycle_details["steps"]["evolution"] = {"hypotheses": []}
 
         # 5. Ranking (Tournament 2 - includes evolved)
         logger.info("Step 5: Ranking 2")
@@ -416,8 +418,9 @@ class SupervisorAgent:
         cycle_details["steps"]["ranking2"] = {"hypotheses": [h.to_dict() for h in active_hypos]}
 
         # Ensure context.active_hypotheses reflects the final ranked hypotheses for meta-review
-        # (This is a workaround: forcibly set context.active_hypotheses to the final set)
-        context.active_hypotheses = {h.hypothesis_id: h for h in active_hypos}
+        # Use all hypotheses from the final ranking step (not just active_hypos, which may be filtered)
+        final_ranked_hypos = [h for h in active_hypos]
+        context.active_hypotheses = {h.hypothesis_id: h for h in final_ranked_hypos}
 
         # 6. Proximity Analysis
         logger.info("Step 6: Proximity Analysis")
