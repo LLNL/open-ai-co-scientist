@@ -529,15 +529,14 @@ def create_gradio_interface():
                         label="Elo K-Factor (Ranking Sensitivity)"
                     )
                 
-                # Action buttons
+                # Single action button
                 with gr.Row():
-                    set_goal_btn = gr.Button("🎯 Set Research Goal", variant="primary")
-                    run_cycle_btn = gr.Button("🔄 Run Cycle", variant="secondary")
+                    run_cycle_btn = gr.Button("🔄 Run Cycle", variant="primary")
                 
                 # Status display
                 status_output = gr.Textbox(
                     label="Status",
-                    value="Enter a research goal and click 'Set Research Goal' to begin.",
+                    value="Enter a research goal and click 'Run Cycle' to begin.",
                     interactive=False,
                     lines=3
                 )
@@ -575,9 +574,33 @@ def create_gradio_interface():
                     value="<p>Related research papers will appear here.</p>"
                 )
         
-        # Event handlers
-        set_goal_btn.click(
-            fn=set_research_goal,
+        # Event handler: single button sets research goal and runs cycle
+        def run_full_cycle(
+            research_goal,
+            llm_model,
+            num_hypotheses,
+            generation_temp,
+            reflection_temp,
+            elo_k_factor,
+            top_k_hypotheses
+        ):
+            # Set research goal
+            status_msg, _ = set_research_goal(
+                research_goal,
+                llm_model,
+                num_hypotheses,
+                generation_temp,
+                reflection_temp,
+                elo_k_factor,
+                top_k_hypotheses
+            )
+            # Run cycle
+            status, results, references = run_cycle()
+            # Combine status messages
+            return f"{status_msg}\n\n{status}", results, references
+
+        run_cycle_btn.click(
+            fn=run_full_cycle,
             inputs=[
                 research_goal_input,
                 model_dropdown,
@@ -587,12 +610,6 @@ def create_gradio_interface():
                 elo_k_factor,
                 top_k_hypotheses
             ],
-            outputs=[status_output, results_output]
-        )
-        
-        run_cycle_btn.click(
-            fn=run_cycle,
-            inputs=[],
             outputs=[status_output, results_output, references_output]
         )
         
