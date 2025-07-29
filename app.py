@@ -545,12 +545,11 @@ def create_gradio_interface():
                 # Instructions
                 gr.Markdown("""
                 ### 📖 Instructions
-                
-                1. **Enter Research Goal**: Describe what you want to research
-                2. **Adjust Settings** (optional): Customize model and parameters
-                3. **Set Goal**: Click to initialize the system
-                4. **Run Cycles**: Generate and evolve hypotheses iteratively
-                
+
+                1. **Enter Research Goal**: Describe what you want to research.
+                2. **Adjust Settings** (optional): Customize model and parameters.
+                3. **Click "Run Cycle"**: The system will set your goal and immediately generate, review, rank, and evolve hypotheses in one step.
+
                 ### 💡 Tips
                 - Start with 3-5 hypotheses per cycle
                 - Higher generation temperature = more creative ideas
