@@ -123,6 +123,11 @@ def get_deployment_environment() -> str:
     else:
         return "Unknown"
 
+def filter_free_models(all_models: List[str]) -> List[str]:
+    """
+    Filters a list of model IDs to include only those with ':free' in their name.
+    """
+    return [model for model in all_models if ":free" in model]
 
 # --- ID Generation ---
 def generate_unique_id(prefix="H") -> str:
