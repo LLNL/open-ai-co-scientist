@@ -177,14 +177,8 @@ def format_cycle_results(cycle_details: Dict, log_file: str = None) -> str:
     
     # Process steps in order
     steps = cycle_details.get('steps', {})
-    step_order = ['generation', 'reflection', 'ranking', 'evolution', 'reflection_evolved', 'ranking_final', 'proximity', 'meta_review']
-    
-    # Step details with expandable sections
-    for step_name in step_order:
-        if step_name not in steps:
-            continue
-            
-        step_data = steps[step_name]
+    # Display steps in the order they appear in the steps dict (preserves backend execution order)
+    for step_name, step_data in steps.items():
         step_title = {
             'generation': '🎯 Generation',
             'reflection': '🔍 Reflection',
@@ -229,7 +223,7 @@ def format_cycle_results(cycle_details: Dict, log_file: str = None) -> str:
                 </div>
                 """
                 
-        elif step_name in ['ranking', 'ranking_final']:
+        elif step_name.startswith('ranking'):
             hypotheses = step_data.get('hypotheses', [])
             if hypotheses:
                 # Sort by Elo score
