@@ -122,37 +122,57 @@ def set_research_goal(
         return error_msg, ""
 
 def run_cycle() -> Tuple[str, str, str]:
-    """Run a single research cycle."""
+    """Run a single research cycle with detailed step logging for debugging."""
+    import datetime
+
     global current_research_goal, global_context, supervisor
-    
+
     if not current_research_goal:
         return "❌ Error: No research goal set. Please set a research goal first.", "", ""
-    
+
+    # Prepare log file
+    log_dir = "results"
+    os.makedirs(log_dir, exist_ok=True)
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_file = os.path.join(log_dir, f"app_log_{timestamp}.txt")
+    with open(log_file, "w") as f:
+        f.write(f"LOGGING FOR THIS GOAL: {current_research_goal.description}\n")
+        f.write(f"--- Endpoint /run_cycle START ---\n")
+
     try:
         iteration = global_context.iteration_number + 1
         logger.info(f"Running cycle {iteration}")
-        
+
         # Run the cycle
         cycle_details = supervisor.run_cycle(current_research_goal, global_context)
-        
-        # Format results for display
-        results_html = format_cycle_results(cycle_details)
-        
+
+        # Log all steps and hypotheses
+        steps = cycle_details.get("steps", {})
+        with open(log_file, "a") as f:
+            for step_name, step_data in steps.items():
+                hypos = step_data.get("hypotheses", [])
+                f.write(f"Step: {step_name} | {len(hypos)} hypotheses\n")
+                for h in hypos:
+                    f.write(f"  - ID: {h.get('id')} | Title: {h.get('title')} | Elo: {h.get('elo_score', 'N/A')}\n")
+
+        # Format results for display (also logs final rankings)
+        results_html = format_cycle_results(cycle_details, log_file=log_file)
+
         # Get references
         references_html = get_references_html(cycle_details)
-        
+
         # Status message
-        status_msg = f"✅ Cycle {iteration} completed successfully!"
-        
+        status_msg = f"✅ Cycle {iteration} completed successfully! Log: {log_file}"
+
         return status_msg, results_html, references_html
-        
+
     except Exception as e:
         error_msg = f"❌ Error during cycle execution: {str(e)}"
         logger.error(error_msg, exc_info=True)
         return error_msg, "", ""
 
-def format_cycle_results(cycle_details: Dict) -> str:
-    """Format cycle results as HTML with expandable sections."""
+def format_cycle_results(cycle_details: Dict, log_file: str = None) -> str:
+    """Format cycle results as HTML with expandable sections. Optionally log final rankings to log_file."""
     html = f"<h2>🔬 Iteration {cycle_details.get('iteration', 'Unknown')}</h2>"
     
     # Process steps in order
@@ -279,13 +299,40 @@ def format_cycle_results(cycle_details: Dict) -> str:
                     html += "<p>No proximity data available.</p>"
                     
         elif step_name == 'meta_review':
-            meta_review = step_data.get('meta_review', {})
+            # Debug: log the actual meta_review data structure
+            import sys
+            print("DEBUG: meta_review step_data =", step_data, file=sys.stderr)
+            assert isinstance(step_data, dict), "meta_review step_data is not a dict"
+            # Accept both direct dict or nested under 'meta_review'
+            if "meta_review" in step_data and isinstance(step_data["meta_review"], dict):
+                meta_review = step_data["meta_review"]
+            else:
+                meta_review = step_data
+            assert "meta_review_critique" in meta_review, f"meta_review_critique missing in meta_review: {meta_review}"
+            assert "research_overview" in meta_review, f"research_overview missing in meta_review: {meta_review}"
+            # Critique section
             if meta_review.get('meta_review_critique'):
                 html += "<h5>Critique:</h5><ul>"
                 for critique in meta_review['meta_review_critique']:
                     html += f"<li>{critique}</li>"
                 html += "</ul>"
-            
+            # Top ranked hypotheses section
+            top_hypos = meta_review.get('research_overview', {}).get('top_ranked_hypotheses', [])
+            assert isinstance(top_hypos, list), f"top_ranked_hypotheses is not a list: {top_hypos}"
+            if top_hypos:
+                html += "<h5>Top Ranked Hypotheses:</h5>"
+                for i, hypo in enumerate(top_hypos):
+                    html += f"""
+                    <div style="border-left: 3px solid #28a745; padding-left: 10px; margin: 10px 0;">
+                        <h6>#{i+1}: {hypo.get('title', 'Untitled')}</h6>
+                        <p><strong>ID:</strong> {hypo.get('id', 'Unknown')} | 
+                           <strong>Elo Score:</strong> {hypo.get('elo_score', 0):.2f}</p>
+                        <p><strong>Description:</strong> {hypo.get('text', 'No description')}</p>
+                        <p><strong>Novelty:</strong> {hypo.get('novelty_review', 'Not assessed')} | 
+                           <strong>Feasibility:</strong> {hypo.get('feasibility_review', 'Not assessed')}</p>
+                    </div>
+                    """
+            # Suggested next steps section
             if meta_review.get('research_overview', {}).get('suggested_next_steps'):
                 html += "<h5>Suggested Next Steps:</h5><ul>"
                 for step in meta_review['research_overview']['suggested_next_steps']:
@@ -299,21 +346,55 @@ def format_cycle_results(cycle_details: Dict) -> str:
         html += "</div></details>"
     
     # Final summary section - always expanded
-    all_hypotheses = []
-    for step_name, step_data in steps.items():
-        if step_data.get('hypotheses'):
-            all_hypotheses.extend(step_data['hypotheses'])
-    
-    if all_hypotheses:
-        # Sort by Elo score
-        all_hypotheses.sort(key=lambda h: h.get('elo_score', 0), reverse=True)
-        
+    # Prefer ranking steps, else fallback to step with most hypotheses
+    final_hypotheses = []
+    final_step = None
+    step_order = ['ranking_final', 'ranking2', 'ranking', 'ranking1']
+    for step_name in step_order:
+        if step_name in steps and steps[step_name].get("hypotheses"):
+            final_hypotheses = steps[step_name]["hypotheses"]
+            final_step = step_name
+            break
+
+    # Fallback: use step with most hypotheses if no ranking step exists
+    if not final_hypotheses:
+        max_count = 0
+        for sname, sdata in steps.items():
+            hypos = sdata.get("hypotheses", [])
+            if len(hypos) > max_count:
+                final_hypotheses = hypos
+                final_step = sname
+                max_count = len(hypos)
+
+    # Assertions: final list should not be empty and no duplicate IDs (only for ranking steps)
+    ranking_steps = ['ranking_final', 'ranking2', 'ranking', 'ranking1']
+    if final_hypotheses:
+        ids = [h.get('id') for h in final_hypotheses]
+        if final_step in ranking_steps:
+            assert len(ids) == len(set(ids)), "Duplicate hypothesis IDs found in final rankings!"
+        assert len(final_hypotheses) > 0, "Final hypothesis list is empty!"
+
+        # Sort by Elo score if present, else by ID
+        if any('elo_score' in h for h in final_hypotheses):
+            final_hypotheses = sorted(final_hypotheses, key=lambda h: h.get('elo_score', 0), reverse=True)
+        else:
+            final_hypotheses = sorted(final_hypotheses, key=lambda h: h.get('id', ''))
+
         html += """
         <div style="margin: 20px 0; padding: 15px; border: 2px solid #28a745; border-radius: 8px; background-color: #f8fff8;">
             <h3>🏆 Final Rankings - Top Hypotheses</h3>
         """
-        
-        for i, hypo in enumerate(all_hypotheses[:10]):  # Show top 10
+        if final_step not in ranking_steps:
+            html += '<p style="color: #e67e22;">Warning: No ranking step found. Showing hypotheses from the latest available step ("{}"). These may not be ranked.</p>'.format(final_step)
+
+        # Log final rankings if log_file is provided
+        if log_file:
+            with open(log_file, "a") as f:
+                f.write(f"--- Final Rankings Section (step: {final_step}) ---\n")
+                for i, hypo in enumerate(final_hypotheses[:10]):
+                    f.write(f"  #{i+1}: ID: {hypo.get('id')} | Title: {hypo.get('title')} | Elo: {hypo.get('elo_score', 'N/A')}\n")
+
+        for i, hypo in enumerate(final_hypotheses[:10]):  # Show top 10
             rank_color = "#28a745" if i < 3 else "#17a2b8" if i < 6 else "#6c757d"
             html += f"""
             <div style="border-left: 4px solid {rank_color}; padding: 15px; margin: 10px 0; background-color: white; border-radius: 5px;">
@@ -327,6 +408,17 @@ def format_cycle_results(cycle_details: Dict) -> str:
             """
         
         html += "</div>"
+    else:
+        html += """
+        <div style="margin: 20px 0; padding: 15px; border: 2px solid #e74c3c; border-radius: 8px; background-color: #fff5f5;">
+            <h3>🏆 Final Rankings - Top Hypotheses</h3>
+            <p style="color: #e74c3c;">No hypotheses available for final ranking. This may indicate an error in the workflow.</p>
+        </div>
+        """
+        # Log missing final rankings if log_file is provided
+        if log_file:
+            with open(log_file, "a") as f:
+                f.write("--- Final Rankings Section: No hypotheses available for final ranking. ---\n")
     
     return html
 

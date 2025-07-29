@@ -405,6 +405,8 @@ class SupervisorAgent:
                 context.add_hypothesis(eh)
             logger.info("Step 4a: Reviewing Evolved Hypotheses")
             self.reflection_agent.review_hypotheses(evolved_hypotheses, context, research_goal) # Pass research_goal
+            # Add explicit step for reviewing evolved hypotheses
+            cycle_details["steps"]["reflection_evolved"] = {"hypotheses": [h.to_dict() for h in evolved_hypotheses]}
             active_hypos = context.get_active_hypotheses() # Update active list
         cycle_details["steps"]["evolution"] = {"hypotheses": [h.to_dict() for h in evolved_hypotheses]}
 
@@ -412,6 +414,10 @@ class SupervisorAgent:
         logger.info("Step 5: Ranking 2")
         self.ranking_agent.run_tournament(active_hypos, context, research_goal) # Pass research_goal
         cycle_details["steps"]["ranking2"] = {"hypotheses": [h.to_dict() for h in active_hypos]}
+
+        # Ensure context.active_hypotheses reflects the final ranked hypotheses for meta-review
+        # (This is a workaround: forcibly set context.active_hypotheses to the final set)
+        context.active_hypotheses = {h.hypothesis_id: h for h in active_hypos}
 
         # 6. Proximity Analysis
         logger.info("Step 6: Proximity Analysis")
@@ -426,6 +432,8 @@ class SupervisorAgent:
         logger.info("Step 7: Meta-Review")
         overview = self.meta_review_agent.summarize_and_feedback(context, proximity_result["adjacency_graph"])
         cycle_details["meta_review"] = overview
+        # Add meta-review to steps for consistency
+        cycle_details["steps"]["meta_review"] = overview
 
         # Increment iteration number at the end of the cycle
         context.iteration_number += 1
