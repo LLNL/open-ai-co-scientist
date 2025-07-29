@@ -15,6 +15,8 @@ Check out the configuration reference at https://huggingface.co/docs/hub/spaces-
 
 # AI Co-Scientist - Hypothesis Evolution System (v1)
 
+This project has a deployed version available at https://huggingface.co/spaces/liaoch/ai-co-scientist
+
 This project implements an AI-powered system for generating, reviewing, ranking, and evolving research hypotheses. It leverages Large Language Models (LLMs) for various tasks, including hypothesis generation, reflection, and comparison. The system is designed to assist researchers in exploring a research space and identifying promising hypotheses.
 
 https://storage.googleapis.com/coscientist_paper/ai_coscientist.pdf
