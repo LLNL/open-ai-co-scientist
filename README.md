@@ -24,13 +24,8 @@ https://storage.googleapis.com/coscientist_paper/ai_coscientist.pdf
 Documentation, Diagrams and Question-Answering of this project using DeepWiki
 * https://deepwiki.com/chunhualiao/ai-co-scientist 
 
-## Prompt Templates
 
-| Prompt Template Purpose | Agent(s) Using It | Description | Code Link |
-|------------------------|-------------------|-------------|-----------|
-| Hypothesis Generation  | GenerationAgent   | Asks the LLM to propose N novel and feasible hypotheses for a given research goal, with rationale, avoiding duplication with existing hypotheses. | [app/agents.py#L180](https://github.com/chunhualiao/ai-co-scientist/blob/0f8f36f1c0fa68a10274c17702b71a6d2c866f6a/app/agents.py#L180) |
-| Hypothesis Reflection  | ReflectionAgent   | Asks the LLM to review a hypothesis and provide a novelty assessment, feasibility assessment, comment, and relevant references in JSON format. | [app/agents.py#L56](https://github.com/chunhualiao/ai-co-scientist/blob/0f8f36f1c0fa68a10274c17702b71a6d2c866f6a/app/agents.py#L56) |
-| Hypothesis Evolution (Combination) | EvolutionAgent | Combines the text of top hypotheses; not a true LLM prompt, but a concatenation of hypothesis texts. | [app/agents.py#L108](https://github.com/chunhualiao/ai-co-scientist/blob/0f8f36f1c0fa68a10274c17702b71a6d2c866f6a/app/agents.py#L108) |
+## Multi-Agent System
 
 This project implements a multi-agent system within the `app` package that iteratively generates and refines research hypotheses. The code is organized into modules:
 *   `app/models.py`: Defines data structures (`Hypothesis`, `ResearchGoal`, `ContextMemory`) and API request/response schemas.
@@ -118,6 +113,14 @@ This project implements a multi-agent system within the `app` package that itera
     Click the "Submit Research Goal" button. This sets the goal and parameters, resets the context, configures logging for the run, and automatically triggers the first cycle.
 8.  **Iterate:**
     Click the "Run Next Cycle" button to perform subsequent refinement cycles on the current set of hypotheses using the same settings. Results are updated on the page after each cycle.
+
+## Prompt Templates
+
+| Prompt Template Purpose | Agent(s) Using It | Description | Code Link |
+|------------------------|-------------------|-------------|-----------|
+| Hypothesis Generation  | GenerationAgent   | Asks the LLM to propose N novel and feasible hypotheses for a given research goal, with rationale, avoiding duplication with existing hypotheses. | [app/agents.py#L180](https://github.com/chunhualiao/ai-co-scientist/blob/0f8f36f1c0fa68a10274c17702b71a6d2c866f6a/app/agents.py#L180) |
+| Hypothesis Reflection  | ReflectionAgent   | Asks the LLM to review a hypothesis and provide a novelty assessment, feasibility assessment, comment, and relevant references in JSON format. | [app/agents.py#L56](https://github.com/chunhualiao/ai-co-scientist/blob/0f8f36f1c0fa68a10274c17702b71a6d2c866f6a/app/agents.py#L56) |
+| Hypothesis Evolution (Combination) | EvolutionAgent | Combines the text of top hypotheses; not a true LLM prompt, but a concatenation of hypothesis texts. | [app/agents.py#L108](https://github.com/chunhualiao/ai-co-scientist/blob/0f8f36f1c0fa68a10274c17702b71a6d2c866f6a/app/agents.py#L108) |
 
 ## Expected Results
 
