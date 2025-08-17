@@ -66,6 +66,13 @@ def call_llm(prompt: str, temperature: float = 0.7) -> str:
 
         except Exception as e:
             error_str = str(e)
+            if "401" in error_str or "No auth credentials found" in error_str:
+                logger.error(f"Authentication failed (401 Unauthorized): {e}")
+                return (
+                    "Authentication with OpenRouter failed (401 Unauthorized). "
+                    "Please check that your OPENROUTER_API_KEY environment variable is set and valid "
+                    "in the environment where the server is running. No hypotheses can be generated until this is resolved."
+                )
             if "Rate limit exceeded" in error_str:
                 logger.warning(f"Rate limit exceeded (attempt {attempt + 1}/{max_retries}): {e}")
                 last_error_message = f"Rate limit exceeded: {e}"

@@ -26,7 +26,7 @@ def call_llm_for_generation(prompt: str, num_hypotheses: int = 3, temperature: f
     response = call_llm(full_prompt, temperature=temperature)
     logger.info("LLM generation response: %s", response)
 
-    if response.startswith("Error:"):
+    if response.startswith("Error:") or response.startswith("Authentication with OpenRouter failed"):
         logger.error(f"LLM generation call failed: {response}")
         return [{"title": "Error", "text": response}]
 
@@ -67,7 +67,12 @@ def call_llm_for_reflection(hypothesis_text: str, temperature: float = 0.5) -> D
 
     if response.startswith("Error:"):
         logger.error(f"LLM reflection call failed: {response}")
-        return {"novelty_review": "ERROR", "feasibility_review": "ERROR", "comment": response, "references": []}
+        return {
+            "novelty_review": "Not reviewed",
+            "feasibility_review": "Not reviewed",
+            "comment": f"LLM review failed: {response}",
+            "references": []
+        }
 
     # Default values
     review_data = {
@@ -383,6 +388,14 @@ class SupervisorAgent:
         for nh in new_hypotheses:
             context.add_hypothesis(nh) # Add to central context
         cycle_details["steps"]["generation"] = {"hypotheses": [h.to_dict() for h in new_hypotheses]}
+
+        # Propagate LLM errors to top-level errors field for frontend display
+        errors = []
+        for h in new_hypotheses:
+            if getattr(h, "title", None) == "Error" and getattr(h, "text", None):
+                errors.append(h.text)
+        if errors:
+            cycle_details["errors"] = errors
 
         # Get all active hypotheses for subsequent steps
         active_hypos = context.get_active_hypotheses()

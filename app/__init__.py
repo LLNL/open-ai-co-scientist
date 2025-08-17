@@ -1,1 +1,1 @@
-# This file makes the 'app' directory a Python package.
+# Ensure app is a package for pytest imports
