@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script for the Gradio AI Co-Scientist app.
+Test script for the Gradio version of Open AI Co-Scientist app.
 Run this to test the app locally before deploying to Hugging Face Spaces.
 """
 
@@ -76,7 +76,7 @@ def test_gradio_app():
 
 def main():
     """Run all tests."""
-    print("🔬 AI Co-Scientist Gradio App Test Suite")
+    print("🔬 Open AI Co-Scientist Gradio App Test Suite")
     print("=" * 50)
     
     # Check API key

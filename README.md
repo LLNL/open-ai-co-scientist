@@ -8,12 +8,29 @@ sdk_version: 5.38.2
 app_file: app.py
 pinned: false
 license: mit
-short_description: Open-source AI-enabled Research Hypothesis Evolution System
+short_description: Open-source implementation of Google's AI Co-Scientist system
 ---
 
 # Open AI Co-Scientist - Hypothesis Evolution System
 
-This project implements an AI-powered system for generating, reviewing, ranking, and evolving research hypotheses using a multi-agent architecture and Large Language Models (LLMs). The user interface is built with Gradio for rapid prototyping and interactive research.
+Open AI Co-Scientist is an AI-powered system for generating, reviewing, ranking, and evolving research hypotheses using a multi-agent architecture and Large Language Models (LLMs). The user interface is built with Gradio for rapid prototyping and interactive research. The system helps researchers explore research spaces and identify promising hypotheses through iterative refinement.
+
+## 🚀 Features
+
+- **Multi-Agent System:** Iteratively generates, reviews, ranks, and evolves research hypotheses using specialized agents (Generation, Reflection, Ranking, Evolution, Proximity, Meta-Review).
+- **LLM Integration:** Uses OpenRouter API to access a variety of LLMs (model selection in UI).
+- **Interactive Gradio UI:** Easy-to-use interface for research goal input, advanced settings, and results visualization.
+- **References & Literature:** Integrated arXiv search for related papers.
+- **Cost Control:** Automatically filters to cost-effective models in production deployment.
+- **Logging:** Each run is logged to a timestamped file in the `results/` directory.
+
+## 💡 Example Research Goals
+
+- Develop new methods for increasing the efficiency of solar panels.
+- Create novel approaches to treat Alzheimer's disease.
+- Design sustainable materials for construction.
+- Improve machine learning model interpretability.
+- Develop new quantum computing algorithms.
 
 ## Quick Start
 
@@ -48,15 +65,7 @@ This project implements an AI-powered system for generating, reviewing, ranking,
 5. **Access the web interface:**
     - Open your browser and go to [http://localhost:7860](http://localhost:7860)
 
-## Features
-
-- **Multi-Agent System:** Iteratively generates, reviews, ranks, and evolves research hypotheses.
-- **LLM Integration:** Uses OpenRouter API to access a variety of LLMs (model selection in UI).
-- **Interactive Gradio UI:** Easy-to-use interface for research goal input, advanced settings, and results visualization.
-- **References & Literature:** Integrated arXiv search for related papers.
-- **Logging:** Each run is logged to a timestamped file in the `results/` directory.
-
-## Usage
+## 🎯 How to Use
 
 1. **Enter a research goal** in the provided textbox.
 2. **(Optional) Adjust advanced settings** such as LLM model, number of hypotheses, temperatures, etc.
@@ -64,24 +73,60 @@ This project implements an AI-powered system for generating, reviewing, ranking,
 4. **View results, meta-review, and related literature** in the web interface.
 5. **Iterate** by running additional cycles to refine hypotheses.
 
-## Example Research Goals
-
-- Develop new methods for increasing the efficiency of solar panels.
-- Create novel approaches to treat Alzheimer's disease.
-- Design sustainable materials for construction.
-- Improve machine learning model interpretability.
-- Develop new quantum computing algorithms.
-
-## Configuration
+## ⚙️ Configuration
 
 - Default settings can be adjusted in `config.yaml`.
 - Many settings can be overridden in the Gradio UI under "Advanced Settings".
 
-## Troubleshooting
+## 🧠 How It Works
 
-- **Authentication errors:** Ensure your `OPENROUTER_API_KEY` is set and has sufficient balance.
-- **No hypotheses generated:** May be due to rate limits or insufficient API balance.
-- **Port conflicts:** The Gradio app runs on port 7860 by default.
+The system uses a multi-agent approach:
+
+1. **Generation Agent:** Creates new research hypotheses.
+2. **Reflection Agent:** Reviews and assesses hypotheses for novelty and feasibility.
+3. **Ranking Agent:** Uses Elo rating system to rank hypotheses.
+4. **Evolution Agent:** Combines top hypotheses to create improved versions.
+5. **Proximity Agent:** Analyzes similarity between hypotheses.
+6. **Meta-Review Agent:** Provides overall critique and suggests next steps.
+
+## 📚 Literature Integration
+
+- Automatically searches arXiv for papers related to your research goal.
+- Displays relevant papers with full metadata, abstracts, and links.
+- Helps contextualize generated hypotheses within existing research.
+
+## ⚙️ Technical Details
+
+- **Models:** Uses OpenRouter API with cost-effective models in production.
+- **Environment Detection:** Automatically detects Hugging Face Spaces deployment.
+- **Cost Control:** Filters to budget-friendly models (Gemini Flash, GPT-3.5-turbo, Claude Haiku, etc.).
+- **Iterative Process:** Each cycle builds on previous results for continuous improvement.
+
+## 🔧 Deployment (Hugging Face Spaces)
+
+The system automatically configures itself based on the deployment environment:
+
+- **Production (HF Spaces):** Limited to cost-effective models for budget control.
+- **Development:** Full access to all available models.
+
+### Hugging Face Spaces Setup
+
+1. **Create a new Space** at [Hugging Face Spaces](https://huggingface.co/spaces).
+2. **Upload files:** README.md, app.py, requirements.txt, and the app/ directory.
+3. **Set environment variables:** Add your `OPENROUTER_API_KEY` as a secret in Space settings.
+4. **Deploy:** The Space will automatically build and deploy the app.
+
+## 📖 Research Paper
+
+Based on the AI Co-Scientist research: https://storage.googleapis.com/coscientist_paper/ai_coscientist.pdf
+
+## 🤝 Contributing
+
+This is an open-source project. Feel free to contribute improvements, bug fixes, or new features.
+
+## ⚠️ Note
+
+This system requires an OpenRouter API key to function. The public demo uses a limited budget, so please use it responsibly. For extensive research, consider running your own instance with your API key.
 
 ## License
 

@@ -464,7 +464,7 @@ def create_gradio_interface():
     status_text, status_color = get_deployment_status()
     
     with gr.Blocks(
-        title="AI Co-Scientist - Hypothesis Evolution System",
+        title="Open AI Co-Scientist - Hypothesis Evolution System",
         theme=gr.themes.Soft(),
         css="""
         .status-box {
@@ -479,7 +479,7 @@ def create_gradio_interface():
     ) as demo:
         
         # Header
-        gr.Markdown("# 🔬 AI Co-Scientist - Hypothesis Evolution System")
+        gr.Markdown("# 🔬 Open AI Co-Scientist - Hypothesis Evolution System")
         gr.Markdown("Generate, review, rank, and evolve research hypotheses using AI agents.")
         
         # Deployment status
