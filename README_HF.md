@@ -1,5 +1,5 @@
 ---
-title: AI Co-Scientist
+title: Open AI Co-Scientist
 emoji: 🔬
 colorFrom: blue
 colorTo: green
@@ -11,7 +11,7 @@ license: mit
 short_description: Generate, review, rank, and evolve research hypotheses using AI agents
 ---
 
-# 🔬 AI Co-Scientist - Hypothesis Evolution System
+# 🔬 Open AI Co-Scientist - Hypothesis Evolution System
 
 An AI-powered system for generating, reviewing, ranking, and evolving research hypotheses using multiple AI agents. This system helps researchers explore research spaces and identify promising hypotheses through iterative refinement.
 

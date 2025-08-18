@@ -1,6 +1,6 @@
 # Deployment Guide: Cost Control for Hugging Face Spaces
 
-This guide covers strategies for deploying the AI Co-Scientist project to Hugging Face Spaces while controlling API costs from public usage.
+This guide covers strategies for deploying the Open AI Co-Scientist project to Hugging Face Spaces while controlling API costs from public usage.
 
 ## Problem Statement
 
@@ -259,7 +259,7 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]
 Create `README.md` in root with HF Spaces header:
 ```yaml
 ---
-title: AI Co-Scientist
+title: Open AI Co-Scientist
 emoji: 🔬
 colorFrom: blue
 colorTo: green
@@ -311,7 +311,7 @@ iface = gr.Interface(
 ```python
 import streamlit as st
 
-st.title("AI Co-Scientist")
+st.title("Open AI Co-Scientist")
 goal = st.text_area("Research Goal")
 model = st.selectbox("Model", ALLOWED_MODELS)
 
@@ -342,4 +342,4 @@ if st.button("Generate Hypotheses"):
 3. **User Feedback**: Monitor for requests for additional models
 4. **Performance Monitoring**: Track response times and error rates
 
-This deployment strategy balances functionality with cost control, ensuring your AI Co-Scientist remains accessible to the public while protecting your budget.
+This deployment strategy balances functionality with cost control, ensuring your Open AI Co-Scientist remains accessible to the public while protecting your budget.

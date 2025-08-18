@@ -1,4 +1,4 @@
-# AI Co-Scientist - Prioritized Feature Roadmap
+# Open AI Co-Scientist - Prioritized Feature Roadmap
 
 This list outlines the top 10 priority features identified to make this system an indispensable tool for scientists and entrepreneurs.
 

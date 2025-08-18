@@ -1,6 +1,6 @@
 # Hugging Face Spaces Deployment Guide
 
-This guide explains how to deploy the AI Co-Scientist system as a Gradio app on Hugging Face Spaces.
+This guide explains how to deploy the Open AI Co-Scientist system as a Gradio app on Hugging Face Spaces.
 
 ## 📋 Prerequisites
 
@@ -14,7 +14,7 @@ This guide explains how to deploy the AI Co-Scientist system as a Gradio app on 
 1. Go to [Hugging Face Spaces](https://huggingface.co/spaces)
 2. Click "Create new Space"
 3. Fill in the details:
-   - **Space name**: `ai-co-scientist` (or your preferred name)
+   - **Space name**: `open-ai-co-scientist` (or your preferred name)
    - **License**: MIT
    - **SDK**: Gradio
    - **Hardware**: CPU Basic (free tier is sufficient)
@@ -185,7 +185,7 @@ If you encounter issues:
 
 ## 🎉 Success!
 
-Once deployed, your AI Co-Scientist will be available at:
+Once deployed, your Open AI Co-Scientist will be available at:
 `https://huggingface.co/spaces/YOUR_USERNAME/YOUR_SPACE_NAME`
 
 Users can now generate and evolve research hypotheses using your deployed system!

@@ -368,7 +368,7 @@ class MetaReviewAgent:
         return overview
 
 class SupervisorAgent:
-    """Orchestrates the AI Co-Scientist workflow."""
+    """Orchestrates the Open AI Co-Scientist workflow."""
     def __init__(self):
         self.generation_agent = GenerationAgent()
         self.reflection_agent = ReflectionAgent()

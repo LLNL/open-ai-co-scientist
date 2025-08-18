@@ -1,8 +1,8 @@
-# Plan to Implement AI Co-Scientist Core Algorithms
+# Plan to Implement Open AI Co-Scientist Core Algorithms
 
 ## 1. Introduction
 
-**Goal:** Extend the existing Python codebase to implement the core algorithms and architecture of the AI co-scientist system as described in the paper "Towards an AI co-scientist" (Gottweis et al., 2025).
+**Goal:** Extend the existing Python codebase to implement the core algorithms and architecture of the AI Co-Scientist system as described in the paper "Towards an AI Co-Scientist" (Gottweis et al., 2025).
 
 **Current State:** The codebase provides a FastAPI web server with basic, sequential agent implementations (`Generation`, `Reflection`, `Ranking`, `Evolution`, `Proximity`, `MetaReview`) orchestrated by a `SupervisorAgent`. It includes data models (`Hypothesis`, `ResearchGoal`, `ContextMemory`) and API endpoints for setting goals and running cycles. LLM interaction is basic, relying on simple prompts for generation and review.
 

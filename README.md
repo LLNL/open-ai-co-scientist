@@ -1,5 +1,5 @@
 ---
-title: Ai Co Scientist
+title: Open AI Co-Scientist
 emoji: 📊
 colorFrom: gray
 colorTo: gray
@@ -8,10 +8,10 @@ sdk_version: 5.38.2
 app_file: app.py
 pinned: false
 license: mit
-short_description: open-source implementation of Google's AI co-scientist syste
+short_description: Open-source AI-enabled Research Hypothesis Evolution System
 ---
 
-# AI Co-Scientist - Hypothesis Evolution System (Gradio Version)
+# Open AI Co-Scientist - Hypothesis Evolution System
 
 This project implements an AI-powered system for generating, reviewing, ranking, and evolving research hypotheses using a multi-agent architecture and Large Language Models (LLMs). The user interface is built with Gradio for rapid prototyping and interactive research.
 
