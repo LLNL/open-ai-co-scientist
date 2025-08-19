@@ -24,6 +24,10 @@ Open AI Co-Scientist is an AI-powered system for generating, reviewing, ranking,
 - **Cost Control:** Automatically filters to cost-effective models in production deployment.
 - **Logging:** Each run is logged to a timestamped file in the `results/` directory.
 
+## AI Transparency Statement
+
+In accordance with LLNL policy on Generative Artificial Intelligence, this project contains AI-assisted code and documentation. Various AI models (including OpenAI and Claude) were used to draft components and fix errors. The development process involved switching between models when encountering limitations with a particular model. All AI-generated content has been reviewed and verified by human developers to ensure accuracy, security, and alignment with project requirements.
+
 ## 💡 Example Research Goals
 
 - Develop new methods for increasing the efficiency of solar panels.
