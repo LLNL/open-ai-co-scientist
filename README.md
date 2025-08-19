@@ -8,7 +8,7 @@ sdk_version: 5.38.2
 app_file: app.py
 pinned: false
 license: mit
-short_description: Open-source implementation of Google's AI Co-Scientist system
+short_description: Open-source implementation of Google's AI Co-Scientist
 ---
 
 # Open AI Co-Scientist - Hypothesis Evolution System
