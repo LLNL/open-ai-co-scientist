@@ -15,6 +15,9 @@ short_description: Open-source implementation of Google's AI Co-Scientist
 
 Open AI Co-Scientist is an AI-powered system for generating, reviewing, ranking, and evolving research hypotheses using a multi-agent architecture and Large Language Models (LLMs). The user interface is built with Gradio for rapid prototyping and interactive research. The system helps researchers explore research spaces and identify promising hypotheses through iterative refinement.
 
+A live demonstration can be accessed at: https://huggingface.co/spaces/liaoch/open-ai-co-scientist
+* Please note that this demo exclusively utilizes free models from OpenRouter.
+
 ## 🚀 Features
 
 - **Multi-Agent System:** Iteratively generates, reviews, ranks, and evolves research hypotheses using specialized agents (Generation, Reflection, Ranking, Evolution, Proximity, Meta-Review).
