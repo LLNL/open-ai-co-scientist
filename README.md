@@ -122,18 +122,25 @@ Based on the AI Co-Scientist research: https://storage.googleapis.com/coscientis
 
 ## 🤝 Contributing
 
-This is an open-source project. Feel free to contribute improvements, bug fixes, or new features.
+This is an open-source project. Feel free to contribute improvements, bug fixes, or new features. 
+
+See CONTRIBUTING.md for details. 
 
 ## ⚠️ Note
 
 This system requires an OpenRouter API key to function. The public demo uses a limited budget, so please use it responsibly. For extensive research, consider running your own instance with your API key.
 
-## License
-
-MIT
 
 ## Acknowledgements
 
-- Based on the open-source implementation of Google's AI Co-Scientist system.
+- Based on the idea of Google's AI Co-Scientist system.
 - Uses [Gradio](https://gradio.app/) for the user interface.
 - LLM access via [OpenRouter](https://openrouter.ai/).
+
+---
+
+## Release
+
+LLNL-CODE-2010270
+
+SPDX-License-Identifier: MIT
